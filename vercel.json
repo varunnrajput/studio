@@ -1,9 +1,8 @@
 {
   "version": 2,
+  "cleanUrls": true,
   "rewrites": [
-    { "source": "/catalog", "destination": "/api/index.js?endpoint=catalog" },
-    { "source": "/search-torrents", "destination": "/api/index.js?endpoint=search-torrents" },
-    { "source": "/api/torrents/:path*", "destination": "/api/index.js?endpoint=torbox&path=/api/torrents/:path*" },
-    { "source": "/api/:path*", "destination": "/api/index.js?endpoint=torbox&path=/api/:path*" }
+    { "source": "/catalog", "destination": "/api/catalog" },
+    { "source": "/search-torrents", "destination": "/api/search-torrents" }
   ]
 }

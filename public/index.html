@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STUVIO // THERMAL RECEIPT REGISTER</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=VT323&display=swap" rel="stylesheet">
+  <style>
+    /* ============================================================
+       DARK MODE RECEIPT PAPER ROOT & COLOR TOKENS
+       ============================================================ */
+    :root {
+      --paper-bg: #14161d;
+      --paper-sub: #1b1e27;
+      --paper-card: #181a23;
+      --paper-border: #2d3240;
+      --paper-border-dashed: #3a4052;
+      --ink-primary: #f1f4f9;
+      --ink-dim: #9aa2b2;
+      --ink-faint: #596173;
+      --ink-accent: #38bdf8;
+      --ink-success: #34d399;
+      --ink-warning: #fbbf24;
+      --ink-danger: #f87171;
+      --font-receipt: 'Space Mono', monospace;
+      --font-dot: 'VT323', monospace;
+      --font-typewriter: 'Courier Prime', monospace;
+    }
+
+    body {
+      font-family: var(--font-receipt);
+      background-color: #0a0b0e;
+      background-image: 
+        radial-gradient(#1e2230 0.75px, transparent 0.75px), 
+        radial-gradient(#1e2230 0.75px, #0a0b0e 0.75px);
+      background-size: 30px 30px;
+      background-position: 0 0, 15px 15px;
+      color: var(--ink-primary);
+      min-height: 100vh;
+      margin: 0;
+      padding: 24px 12px;
+      box-sizing: border-box;
+      selection-background-color: var(--ink-primary);
+      selection-color: #000;
+    }
+
+    ::selection {
+      background: var(--ink-primary);
+      color: #000;
+    }
+
+    /* ============================================================
+       CONTINUOUS THERMAL RECEIPT SLIP ARCHITECTURE
+       ============================================================ */
+    .receipt-roll {
+      max-width: 960px;
+      margin: 0 auto;
+      position: relative;
+      filter: drop-shadow(0 25px 50px rgba(0, 0, 0, 0.9)) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.7));
+    }
+
+    /* Jagged Sawtooth Serrated Tear Edges */
+    .receipt-sawtooth-top {
+      height: 14px;
+      width: 100%;
+      background: repeating-linear-gradient(
+        -45deg,
+        var(--paper-bg),
+        var(--paper-bg) 7px,
+        transparent 7px,
+        transparent 14px
+      ),
+      repeating-linear-gradient(
+        45deg,
+        var(--paper-bg),
+        var(--paper-bg) 7px,
+        transparent 7px,
+        transparent 14px
+      );
+      background-position: bottom left;
+      background-repeat: repeat-x;
+      background-size: 14px 14px;
+      transform: rotate(180deg);
+      margin-bottom: -1px;
+    }
+
+    .receipt-sawtooth-bottom {
+      height: 14px;
+      width: 100%;
+      background: repeating-linear-gradient(
+        -45deg,
+        var(--paper-bg),
+        var(--paper-bg) 7px,
+        transparent 7px,
+        transparent 14px
+      ),
+      repeating-linear-gradient(
+        45deg,
+        var(--paper-bg),
+        var(--paper-bg) 7px,
+        transparent 7px,
+        transparent 14px
+      );
+      background-position: top left;
+      background-repeat: repeat-x;
+      background-size: 14px 14px;
+      margin-top: -1px;
+    }
+
+    .receipt-body {
+      background-color: var(--paper-bg);
+      border-left: 2px dashed var(--paper-border);
+      border-right: 2px dashed var(--paper-border);
+      position: relative;
+      padding: 32px 24px sm:padding: 40px 36px;
+      box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.45);
+    }
+
+    /* Side Perforation Pin Holes */
+    .receipt-body::before,
+    .receipt-body::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 8px;
+      background: radial-gradient(circle at 4px 12px, rgba(10, 11, 14, 0.95) 3.5px, transparent 4px);
+      background-size: 8px 24px;
+      pointer-events: none;
+    }
+    .receipt-body::before { left: 4px; }
+    .receipt-body::after { right: 4px; }
+
+    /* ============================================================
+       THERMAL RECEIPT TYPOGRAPHY & DIVIDERS
+       ============================================================ */
+    .font-dot {
+      font-family: var(--font-dot);
+    }
+    .font-typewriter {
+      font-family: var(--font-typewriter);
+    }
+
+    .receipt-rule-double {
+      border-top: 3px double var(--paper-border-dashed);
+      margin: 12px 0;
+    }
+
+    .receipt-rule-dashed {
+      border-top: 1px dashed var(--paper-border-dashed);
+      margin: 12px 0;
+    }
+
+    .receipt-rule-dotted {
+      border-top: 2px dotted var(--paper-border-dashed);
+      margin: 10px 0;
+    }
+
+    /* Barcode simulation */
+    .barcode-line {
+      display: inline-block;
+      height: 38px;
+      background-color: var(--ink-primary);
+      margin-right: 2px;
+      vertical-align: middle;
+    }
+
+    /* Receipt Cards & Coupons */
+    .receipt-card {
+      background: var(--paper-card);
+      border: 1px dashed var(--paper-border-dashed);
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .receipt-card:hover {
+      background: var(--paper-sub);
+      border-color: var(--ink-dim);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Tactile Receipt Buttons */
+    .receipt-btn {
+      background: var(--paper-sub);
+      border: 1px solid var(--paper-border);
+      color: var(--ink-primary);
+      font-family: var(--font-receipt);
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s ease;
+    }
+    .receipt-btn:hover {
+      background: var(--ink-primary);
+      color: #0a0b0e;
+      border-color: var(--ink-primary);
+    }
+    .receipt-btn:active {
+      transform: scale(0.98);
+    }
+
+    .receipt-btn-primary {
+      background: var(--ink-primary);
+      color: #0a0b0e;
+      border: 1px solid var(--ink-primary);
+      font-weight: 700;
+      font-family: var(--font-receipt);
+    }
+    .receipt-btn-primary:hover {
+      background: #ffffff;
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.2);
+    }
+
+    /* Active Tab */
+    .receipt-tab-active {
+      background: var(--ink-primary) !important;
+      color: #0a0b0e !important;
+      font-weight: 700;
+    }
+
+    /* Receipt Inputs */
+    .receipt-input {
+      background: #0d0f14;
+      border: 1px dashed var(--paper-border-dashed);
+      color: var(--ink-primary);
+      font-family: var(--font-receipt);
+      transition: all 0.15s ease;
+    }
+    .receipt-input:focus {
+      outline: none;
+      border-color: var(--ink-primary);
+      background: #08090c;
+    }
+    .receipt-input::placeholder {
+      color: var(--ink-faint);
+    }
+
+    /* Custom Scrollbar for Dark Receipt */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--paper-bg); }
+    ::-webkit-scrollbar-thumb { background: var(--paper-border); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--ink-dim); }
+  </style>
+</head>
+<body>
+
+  <!-- ============================================================
+       THE CONTINUOUS THERMAL RECEIPT SLIP
+       ============================================================ -->
+  <main class="receipt-roll px-2 sm:px-4">
+    
+    <!-- Top Jagged Tear Edge -->
+    <div class="receipt-sawtooth-top"></div>
+
+    <!-- Main Receipt Body -->
+    <div class="receipt-body px-4 sm:px-10 py-8">
+      
+      <!-- Top Barcode & Terminal Timestamp -->
+      <div class="flex flex-col items-center justify-center text-center select-none mb-3">
+        <!-- Generative CSS Barcode Header -->
+        <div class="flex items-center justify-center overflow-hidden h-9 opacity-85 my-1">
+          <span class="barcode-line w-[2px]"></span>
+          <span class="barcode-line w-[4px]"></span>
+          <span class="barcode-line w-[1px]"></span>
+          <span class="barcode-line w-[3px]"></span>
+          <span class="barcode-line w-[5px]"></span>
+          <span class="barcode-line w-[2px]"></span>
+          <span class="barcode-line w-[1px]"></span>
+          <span class="barcode-line w-[4px]"></span>
+          <span class="barcode-line w-[2px]"></span>
+          <span class="barcode-line w-[6px]"></span>
+          <span class="barcode-line w-[1px]"></span>
+          <span class="barcode-line w-[3px]"></span>
+          <span class="barcode-line w-[4px]"></span>
+          <span class="barcode-line w-[2px]"></span>
+          <span class="barcode-line w-[1px]"></span>
+          <span class="barcode-line w-[5px]"></span>
+          <span class="barcode-line w-[3px]"></span>
+          <span class="barcode-line w-[2px]"></span>
+          <span class="barcode-line w-[4px]"></span>
+          <span class="barcode-line w-[1px]"></span>
+          <span class="barcode-line w-[3px]"></span>
+          <span class="barcode-line w-[5px]"></span>
+          <span class="barcode-line w-[2px]"></span>
+          <span class="barcode-line w-[4px]"></span>
+        </div>
+        <div class="font-dot text-sm tracking-[5px] text-[var(--ink-dim)]">
+          * STUVIO-TORBOX-STREAM-REG-99420 *
+        </div>
+      </div>
+
+      <!-- Receipt Store Header Block -->
+      <header class="text-center font-typewriter space-y-1 select-none">
+        <div class="font-dot text-3xl sm:text-4xl font-bold tracking-wider text-[var(--ink-primary)]">
+          * * * S T U V I O   P O S * * *
+        </div>
+        <p class="text-xs text-[var(--ink-dim)] tracking-widest uppercase">
+          Thermal Debrid Streaming Terminal // Register #01
+        </p>
+        <p class="text-[11px] text-[var(--ink-faint)]">
+          CLOUD CACHE PROTOCOL v3.4 // DIRECT SEED PIPELINE
+        </p>
+
+        <div class="receipt-rule-double"></div>
+
+        <!-- Transaction Metadata Table -->
+        <div class="grid grid-cols-2 text-left text-[11px] text-[var(--ink-dim)] font-receipt gap-1 py-1">
+          <div>DATE: <span id="receiptDate" class="text-[var(--ink-primary)]">2026-09-11</span></div>
+          <div class="text-right">TIME: <span id="receiptTime" class="text-[var(--ink-primary)]">00:00:00 UTC</span></div>
+          <div>CASHIER: <span class="text-[var(--ink-primary)]">TORBOX_DAEMON</span></div>
+          <div class="text-right">REGISTER: <span class="text-[var(--ink-primary)]">POS-01 (ACTIVE)</span></div>
+          <div>SWARM CACHE: <span class="text-[var(--ink-success)] font-bold">READY (100%)</span></div>
+          <div class="text-right">
+            <button onclick="toggleAudio()" class="hover:underline text-[var(--ink-primary)] flex items-center gap-1 ml-auto">
+              <span id="audioStatusDot" class="w-1.5 h-1.5 rounded-full bg-[var(--ink-success)] inline-block"></span>
+              <span id="audioLabel">AUDIO: ON</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="receipt-rule-dashed"></div>
+
+        <!-- TorBox API Key Input Slip -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-2.5 py-1 text-xs">
+          <div class="flex items-center gap-2 w-full sm:w-auto">
+            <span class="text-[11px] text-[var(--ink-faint)] uppercase whitespace-nowrap">AUTH TOKEN:</span>
+            <input 
+              id="apiKeyInput" 
+              type="password" 
+              placeholder="ENTER TORBOX API KEY..." 
+              class="receipt-input px-3 py-1.5 rounded text-xs tracking-wider w-full sm:w-64"
+            />
+          </div>
+          <button 
+            id="connectBtn" 
+            onclick="saveApiKey()" 
+            class="receipt-btn px-4 py-1.5 rounded text-xs tracking-wider font-bold w-full sm:w-auto active:scale-95"
+          >
+            [ VALIDATE & SAVE ]
+          </button>
+        </div>
+
+        <div class="receipt-rule-dashed"></div>
+
+        <!-- Register Department Navigation Buttons -->
+        <nav class="flex flex-wrap items-center justify-center gap-2 pt-1 font-receipt">
+          <button 
+            id="navDiscover" 
+            onclick="switchView('discover')" 
+            class="receipt-btn receipt-tab-active px-4 py-2 rounded text-xs tracking-wider font-bold"
+          >
+            [ 01: CATALOG MENU ]
+          </button>
+          <button 
+            id="navSearch" 
+            onclick="switchView('search')" 
+            class="receipt-btn px-4 py-2 rounded text-xs tracking-wider font-bold text-[var(--ink-dim)]"
+          >
+            [ 02: SEARCH DOCKET ]
+          </button>
+          <button 
+            id="navLibrary" 
+            onclick="switchView('library')" 
+            class="receipt-btn px-4 py-2 rounded text-xs tracking-wider font-bold text-[var(--ink-dim)]"
+          >
+            [ 03: ACCOUNT LEDGER ]
+          </button>
+        </nav>
+
+        <div class="receipt-rule-double"></div>
+      </header>
+
+      <!-- ============================================================
+           SCREENING ROOM THEATRE (ADMISSION TICKET STUB)
+           ============================================================ -->
+      <section id="playerSection" class="hidden flex-col gap-3 my-6 receipt-card p-4 rounded border-2 border-dashed border-[var(--ink-dim)]">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-dashed border-[var(--paper-border-dashed)] pb-2.5">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded bg-[var(--ink-primary)] text-black font-bold text-[10px] font-receipt">ADMIT ONE // SCREENING</span>
+              <h2 id="mediaTitle" class="text-xs sm:text-sm font-bold truncate text-[var(--ink-primary)] max-w-lg">PLAYING STREAM</h2>
+            </div>
+            <p id="mediaSub" class="text-[11px] text-[var(--ink-dim)] mt-0.5 flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-[var(--ink-success)] animate-pulse"></span>
+              Direct TorBox Streaming Cache
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <a 
+              id="externalPlayBtn" 
+              href="#" 
+              target="_blank" 
+              class="receipt-btn px-3 py-1 rounded text-xs tracking-wider"
+              onclick="playPaperTick()"
+            >
+              LAUNCH VLC ↗
+            </a>
+            <button 
+              onclick="playPaperTick(); closePlayer()" 
+              class="receipt-btn px-2.5 py-1 rounded text-xs text-[var(--ink-danger)] border-[var(--ink-danger)]/40 hover:bg-[var(--ink-danger)]/10 tracking-wider"
+            >
+              [✕ VOID TICKET]
+            </button>
+          </div>
+        </div>
+
+        <!-- Video Player Frame -->
+        <div class="w-full aspect-video bg-black rounded overflow-hidden border border-[var(--paper-border-dashed)] shadow-2xl relative">
+          <div id="artplayer" class="w-full h-full"></div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           1. DISCOVER VIEW (ITEMIZED INVENTORY MENU)
+           ============================================================ -->
+      <section id="viewDiscover" class="flex flex-col gap-4 my-4">
+        
+        <!-- Department Header & Switchers -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-dashed border-[var(--paper-border-dashed)]">
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="font-dot text-2xl font-bold tracking-wider text-[var(--ink-primary)]">CATALOG INVENTORY</h2>
+              <span class="text-[11px] text-[var(--ink-dim)]">/DEPT-ALL</span>
+            </div>
+            <p class="text-[11px] text-[var(--ink-faint)]">Select item coupon to tear and stream directly via debrid cache</p>
+          </div>
+
+          <!-- Department Buttons -->
+          <div class="flex items-center gap-1.5 self-start sm:self-auto">
+            <button onclick="loadCatalog('movies')" id="btnFeedMovies" class="receipt-btn receipt-tab-active px-3 py-1.5 rounded text-xs tracking-wider">
+              DEPT 01: MOVIES
+            </button>
+            <button onclick="loadCatalog('series')" id="btnFeedSeries" class="receipt-btn px-3 py-1.5 rounded text-xs tracking-wider text-[var(--ink-dim)]">
+              DEPT 02: SERIES
+            </button>
+            <button onclick="loadCatalog('anime')" id="btnFeedAnime" class="receipt-btn px-3 py-1.5 rounded text-xs tracking-wider text-[var(--ink-dim)]">
+              DEPT 03: ANIME
+            </button>
+          </div>
+        </div>
+
+        <!-- Dynamic Product Coupon Cards Grid -->
+        <div id="catalogGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3.5">
+          <!-- Injected dynamically via JS -->
+        </div>
+      </section>
+
+      <!-- ============================================================
+           2. SEARCH VIEW (ORDER DOCKET & SWARM PACKING SLIPS)
+           ============================================================ -->
+      <section id="viewSearch" class="hidden flex-col gap-4 my-4">
+        
+        <!-- Active Target Order Slip Banner -->
+        <div id="targetMediaDossier" class="hidden receipt-card p-4 rounded border-2 border-dashed border-[var(--ink-primary)] flex-col sm:flex-row items-center gap-4">
+          <div class="relative w-16 sm:w-20 aspect-[2/3] shrink-0 bg-black rounded overflow-hidden border border-[var(--paper-border-dashed)] shadow">
+            <img id="targetPoster" src="" alt="Target Poster" class="w-full h-full object-cover filter contrast-110" />
+          </div>
+          <div class="flex flex-col gap-1 flex-1 min-w-0 text-center sm:text-left">
+            <div class="flex items-center justify-center sm:justify-start gap-2">
+              <span class="px-2 py-0.5 rounded text-[10px] bg-[var(--ink-primary)] text-black font-bold font-receipt">ORDER LOCKED</span>
+              <span id="targetRating" class="text-xs font-bold text-[var(--ink-warning)]"></span>
+              <span id="targetType" class="text-[10px] text-[var(--ink-faint)]"></span>
+            </div>
+            <h3 id="targetTitle" class="font-dot text-2xl font-bold truncate text-[var(--ink-primary)] leading-tight"></h3>
+            <p id="targetStatus" class="text-[11px] text-[var(--ink-dim)] font-receipt">
+              TRANSMITTING TO DEBRID PACKING SLIPS // SELECT STREAM PAYLOAD BELOW
+            </p>
+          </div>
+          <button onclick="clearTargetMedia()" class="receipt-btn text-[10px] px-3 py-1.5 rounded text-[var(--ink-dim)] hover:text-[var(--ink-danger)] border-[var(--paper-border)] self-center sm:self-start">
+            [✕ CANCEL ORDER]
+          </button>
+        </div>
+
+        <!-- Order Form Query Register -->
+        <div class="receipt-card p-4 rounded flex flex-col gap-3">
+          <div class="text-[11px] text-[var(--ink-dim)] flex items-center justify-between">
+            <span>TRANSACTION: SWARM LOOKUP QUERY</span>
+            <span class="text-[var(--ink-faint)]">PROTOCOL: DHT APICACHE</span>
+          </div>
+
+          <form id="searchForm" class="flex flex-col sm:flex-row gap-2">
+            <div class="relative flex-1">
+              <span class="absolute left-3 top-2.5 text-xs text-[var(--ink-faint)] select-none">&gt;</span>
+              <input 
+                id="keywordInput" 
+                type="text" 
+                placeholder="ENTER SEARCH QUERY (MOVIE, SHOW, OR ANIME)..." 
+                class="w-full receipt-input rounded pl-7 pr-3 py-2 text-xs tracking-wider"
+              />
+            </div>
+            <button type="submit" class="receipt-btn-primary px-5 py-2 rounded text-xs tracking-wider active:scale-95">
+              [ EXECUTE DOCKET ]
+            </button>
+          </form>
+
+          <div class="flex flex-wrap items-center justify-between gap-3 text-xs pt-1 text-[var(--ink-dim)]">
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] uppercase text-[var(--ink-faint)]">MAX SLIPS:</span>
+              <select id="limitSelect" class="receipt-input rounded px-2 py-1 text-xs">
+                <option value="15">15 SLIPS</option>
+                <option value="25" selected>25 SLIPS</option>
+                <option value="50">50 SLIPS</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] uppercase text-[var(--ink-faint)]">SORT ORDER:</span>
+              <select id="sortSelect" class="receipt-input rounded px-2.5 py-1 text-xs">
+                <option value="latest_topseed" selected>LATEST RELEASED (TOP SEED #1)</option>
+                <option value="seeds">MOST SEEDERS (▲ HIGH)</option>
+                <option value="latest">LATEST ADDED (DATE ▼)</option>
+                <option value="peers">PEERS (▼ ACTIVE)</option>
+                <option value="size_desc">PAYLOAD SIZE (HIGH)</option>
+                <option value="size_asc">PAYLOAD SIZE (LOW)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Search Results Grid -->
+        <div id="searchResults" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <p class="text-[var(--ink-faint)] text-xs col-span-2 text-center py-16 font-dot text-xl">
+            REGISTER IDLE. ENTER SEARCH QUERY TO PRINT TORRENT SLIPS...
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           3. CLOUD LIBRARY (ACCOUNT STATEMENT LEDGER)
+           ============================================================ -->
+      <section id="viewLibrary" class="hidden flex-col gap-4 my-4">
+        <div class="flex items-center justify-between pb-2 border-b border-dashed border-[var(--paper-border-dashed)]">
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="font-dot text-2xl font-bold tracking-wider text-[var(--ink-primary)]">ACCOUNT LEDGER</h2>
+              <span class="text-[11px] text-[var(--ink-dim)]">/TORBOX/VOL0</span>
+            </div>
+            <p class="text-[11px] text-[var(--ink-faint)]">Itemized record of active cloud-cached torrents ready for playback</p>
+          </div>
+          <button onclick="playPaperTick(); fetchLibrary()" class="receipt-btn px-3 py-1.5 rounded text-xs tracking-wider">
+            [ ↺ REFRESH STATEMENT ]
+          </button>
+        </div>
+
+        <div id="libraryList" class="space-y-3">
+          <p class="text-[var(--ink-faint)] text-xs text-center py-16 font-dot text-xl">
+            SYNCHRONIZING ACCOUNT STATEMENT WITH TORBOX CLOUD...
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           RECEIPT FOOTER & SUMMARY
+           ============================================================ -->
+      <footer class="mt-8 pt-4 border-t-2 border-dashed border-[var(--paper-border-dashed)] text-center font-typewriter text-xs text-[var(--ink-dim)] space-y-2 select-none">
+        
+        <div class="receipt-rule-dotted"></div>
+
+        <div class="flex justify-between items-center text-[11px] px-2">
+          <span>SUBTOTAL (BANDWIDTH):</span>
+          <span class="font-mono text-[var(--ink-primary)]">UNLIMITED / 0.00 USD</span>
+        </div>
+        <div class="flex justify-between items-center text-[11px] px-2">
+          <span>DEBRID CACHE FEE:</span>
+          <span class="font-mono text-[var(--ink-primary)]">INCLUDED / 0.00 USD</span>
+        </div>
+        <div class="flex justify-between items-center text-xs font-bold px-2 pt-1 border-t border-[var(--paper-border-dashed)] text-[var(--ink-primary)]">
+          <span>TOTAL CHARGES:</span>
+          <span class="font-mono text-base text-[var(--ink-success)]">0.00 USD (PAID)</span>
+        </div>
+
+        <div class="receipt-rule-double"></div>
+
+        <!-- Thank You Customer Copy Message -->
+        <p class="text-xs uppercase tracking-wider text-[var(--ink-primary)] pt-1">
+          THANK YOU FOR STREAMING WITH STUVIO!
+        </p>
+        <p class="text-[10px] text-[var(--ink-faint)]">
+          PLEASE RETAIN RECEIPT FOR YOUR PERSONAL ARCHIVE RECORDS
+        </p>
+
+        <!-- Bottom Barcode -->
+        <div class="flex items-center justify-center overflow-hidden h-8 opacity-75 my-2">
+          <span class="barcode-line w-[3px]"></span>
+          <span class="barcode-line w-[1px]"></span>
+          <span class="barcode-line w-[4px]"></span>
+          <span class="barcode-line w-[2px]"></span>
+          <span class="barcode-line w-[6px]"></span>
+          <span class="barcode-line w-[1px]"></span>
+          <span class="barcode-line w-[3px]"></span>
+          <span class="barcode-line w-[5px]"></span>
+          <span class="barcode-line w-[2px]"></span>
+          <span class="barcode-line w-[4px]"></span>
+          <span class="barcode-line w-[1px]"></span>
+          <span class="barcode-line w-[3px]"></span>
+          <span class="barcode-line w-[5px]"></span>
+          <span class="barcode-line w-[2px]"></span>
+        </div>
+        <div class="font-dot text-xs tracking-[6px] text-[var(--ink-faint)] pb-2">
+          AUTH-CODE: #99420-TBX-STREAM-DONE
+        </div>
+
+      </footer>
+
+    </div> <!-- /receipt-body -->
+
+    <!-- Bottom Jagged Tear Edge -->
+    <div class="receipt-sawtooth-bottom"></div>
+
+  </main> <!-- /receipt-roll -->
+
+  <!-- ============================================================
+       APPLICATION LOGIC & THERMAL PRINTER AUDIO ENGINE
+       ============================================================ -->
+  <script>
+    const API_BASE = "/api";
+    let art = null;
+    let apiKey = localStorage.getItem("stuvio_tb_key") || "";
+    let searchTorrentList = [];
+    let activeTargetMedia = null;
+
+    // ==========================================
+    // 1. Web Audio API Thermal Printer Synthesizer
+    // ==========================================
+    const ThermalPrinterAudio = {
+      ctx: null,
+      muted: localStorage.getItem("stuvio_muted") === "true",
+      init() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) this.ctx = new AudioCtx();
+        }
+      },
+      tick() {
+        if (this.muted) return;
+        try {
+          this.init();
+          if (!this.ctx) return;
+          if (this.ctx.state === "suspended") this.ctx.resume();
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(1400, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(300, this.ctx.currentTime + 0.02);
+          gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.02);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.02);
+        } catch (e) {}
+      },
+      paperFeed() {
+        if (this.muted) return;
+        try {
+          this.init();
+          if (!this.ctx) return;
+          if (this.ctx.state === "suspended") this.ctx.resume();
+          for (let i = 0; i < 3; i++) {
+            setTimeout(() => this.tick(), i * 35);
+          }
+        } catch (e) {}
+      }
+    };
+
+    function playPaperTick() { ThermalPrinterAudio.tick(); }
+    function playPaperFeed() { ThermalPrinterAudio.paperFeed(); }
+
+    function toggleAudio() {
+      ThermalPrinterAudio.muted = !ThermalPrinterAudio.muted;
+      localStorage.setItem("stuvio_muted", ThermalPrinterAudio.muted);
+      updateAudioUI();
+      if (!ThermalPrinterAudio.muted) playPaperFeed();
+    }
+
+    function updateAudioUI() {
+      const dot = document.getElementById("audioStatusDot");
+      const label = document.getElementById("audioLabel");
+      if (ThermalPrinterAudio.muted) {
+        dot.className = "w-1.5 h-1.5 rounded-full bg-[var(--ink-faint)] inline-block";
+        label.innerText = "AUDIO: MUTE";
+      } else {
+        dot.className = "w-1.5 h-1.5 rounded-full bg-[var(--ink-success)] inline-block";
+        label.innerText = "AUDIO: ON";
+      }
+    }
+    updateAudioUI();
+
+    // ==========================================
+    // 2. Receipt Timestamp Clock
+    // ==========================================
+    function updateClock() {
+      const now = new Date();
+      const yr = now.getUTCFullYear();
+      const mo = String(now.getUTCMonth() + 1).padStart(2, '0');
+      const da = String(now.getUTCDate()).padStart(2, '0');
+      const h = String(now.getUTCHours()).padStart(2, '0');
+      const m = String(now.getUTCMinutes()).padStart(2, '0');
+      const s = String(now.getUTCSeconds()).padStart(2, '0');
+
+      const dateEl = document.getElementById("receiptDate");
+      const timeEl = document.getElementById("receiptTime");
+      if (dateEl) dateEl.innerText = `${yr}-${mo}-${da}`;
+      if (timeEl) timeEl.innerText = `${h}:${m}:${s} UTC`;
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // ==========================================
+    // 3. TorBox API Key Storage
+    // ==========================================
+    const apiKeyInput = document.getElementById("apiKeyInput");
+    if (apiKey) apiKeyInput.value = apiKey;
+
+    function saveApiKey() {
+      apiKey = apiKeyInput.value.trim();
+      localStorage.setItem("stuvio_tb_key", apiKey);
+      playPaperFeed();
+      if (apiKey) {
+        alert("TOKEN STORED // TORBOX REGISTER LINKED.");
+      }
+    }
+
+    // ==========================================
+    // 4. Register Department Switcher
+    // ==========================================
+    function switchView(view) {
+      playPaperTick();
+      const views = {
+        discover: { sec: document.getElementById("viewDiscover"), nav: document.getElementById("navDiscover") },
+        search: { sec: document.getElementById("viewSearch"), nav: document.getElementById("navSearch") },
+        library: { sec: document.getElementById("viewLibrary"), nav: document.getElementById("navLibrary") },
+      };
+
+      Object.keys(views).forEach(v => {
+        if (v === view) {
+          views[v].sec.classList.remove("hidden");
+          views[v].sec.classList.add("flex");
+          views[v].nav.classList.add("receipt-tab-active");
+          views[v].nav.classList.remove("text-[var(--ink-dim)]");
+        } else {
+          views[v].sec.classList.add("hidden");
+          views[v].sec.classList.remove("flex");
+          views[v].nav.classList.remove("receipt-tab-active");
+          views[v].nav.classList.add("text-[var(--ink-dim)]");
+        }
+      });
+
+      if (view === "library") fetchLibrary();
+    }
+
+    // ==========================================
+    // 5. Discover Inventory Catalog
+    // ==========================================
+    const catalogGrid = document.getElementById("catalogGrid");
+
+    async function loadCatalog(type) {
+      playPaperTick();
+      ["btnFeedMovies", "btnFeedSeries", "btnFeedAnime"].forEach(id => {
+        const b = document.getElementById(id);
+        b.classList.remove("receipt-tab-active");
+        b.classList.add("text-[var(--ink-dim)]");
+      });
+      const activeId = type === "movies" ? "btnFeedMovies" : type === "series" ? "btnFeedSeries" : "btnFeedAnime";
+      const activeBtn = document.getElementById(activeId);
+      activeBtn.classList.add("receipt-tab-active");
+      activeBtn.classList.remove("text-[var(--ink-dim)]");
+
+      catalogGrid.innerHTML = `
+        <div class="col-span-full flex flex-col items-center justify-center py-16 gap-3 text-[var(--ink-dim)] font-dot text-lg">
+          <div class="w-6 h-6 border-2 border-[var(--ink-primary)] border-t-transparent rounded-full animate-spin"></div>
+          <span>PRINTING INVENTORY CATALOG...</span>
+        </div>
+      `;
+
+      try {
+        const res = await fetch(`/catalog?type=${type}`);
+        const items = await res.json();
+
+        if (!items || !items.length) {
+          catalogGrid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--ink-dim)] py-16 font-dot text-lg">NO INVENTORY ITEMS RETURNED.</p>`;
+          return;
+        }
+
+        catalogGrid.innerHTML = "";
+        items.forEach((item, idx) => {
+          const card = document.createElement("div");
+          card.className = "receipt-card rounded p-2 flex flex-col justify-between gap-2 cursor-pointer";
+          card.onclick = () => { playPaperFeed(); selectRecommendation(item); };
+
+          const posterUrl = item.poster || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80";
+
+          card.innerHTML = `
+            <div>
+              <div class="flex items-center justify-between text-[9px] text-[var(--ink-faint)] font-mono pb-1 border-b border-dashed border-[var(--paper-border-dashed)]">
+                <span>ITEM #${String(idx + 1).padStart(2, '0')}</span>
+                <span>${item.year || "N/A"}</span>
+              </div>
+
+              <!-- Poster Ticket Frame -->
+              <div class="relative aspect-[2/3] w-full bg-black rounded overflow-hidden my-1.5 border border-[var(--paper-border-dashed)]">
+                <img src="${posterUrl}" alt="${item.title}" class="w-full h-full object-cover filter contrast-105" loading="lazy" />
+                ${item.rating ? `<span class="absolute top-1.5 right-1.5 bg-black/90 text-[var(--ink-warning)] font-dot text-xs font-bold px-1.5 py-0.5 rounded border border-[var(--paper-border-dashed)]">★ ${item.rating}</span>` : ""}
+              </div>
+
+              <div class="pt-0.5">
+                <h4 class="text-xs font-bold truncate text-[var(--ink-primary)]" title="${item.title}">${item.title}</h4>
+                <div class="flex items-center justify-between text-[10px] text-[var(--ink-faint)] mt-0.5">
+                  <span>[${item.type.toUpperCase()}]</span>
+                </div>
+              </div>
+            </div>
+
+            <button class="receipt-btn-primary w-full py-1 rounded text-[10px] tracking-wider uppercase font-bold active:scale-95">
+              ✂ TEAR & STREAM
+            </button>
+          `;
+          catalogGrid.appendChild(card);
+        });
+      } catch (err) {
+        catalogGrid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--ink-danger)] py-16 font-dot text-lg">FAILED TO PRINT INVENTORY.</p>`;
+      }
+    }
+
+    // ==========================================
+    // 6. Target Selection & Search
+    // ==========================================
+    function selectRecommendation(item) {
+      if (typeof item === "string") {
+        activeTargetMedia = { title: item, poster: null };
+      } else {
+        activeTargetMedia = item;
+      }
+      switchView("search");
+      const input = document.getElementById("keywordInput");
+      input.value = activeTargetMedia.title;
+      renderTargetMediaDossier(activeTargetMedia);
+      document.getElementById("searchForm").dispatchEvent(new Event("submit"));
+    }
+
+    function renderTargetMediaDossier(media) {
+      const dossier = document.getElementById("targetMediaDossier");
+      if (!media || !media.title) {
+        dossier.classList.add("hidden");
+        dossier.classList.remove("flex");
+        return;
+      }
+
+      const posterEl = document.getElementById("targetPoster");
+      const titleEl = document.getElementById("targetTitle");
+      const ratingEl = document.getElementById("targetRating");
+      const typeEl = document.getElementById("targetType");
+
+      titleEl.innerText = media.title;
+      ratingEl.innerText = media.rating ? `★ ${media.rating}` : "";
+      typeEl.innerText = media.type ? `[${media.type.toUpperCase()}]` : (media.year ? `[${media.year}]` : "");
+
+      if (media.poster) {
+        posterEl.src = media.poster;
+        posterEl.parentElement.classList.remove("hidden");
+      } else {
+        posterEl.parentElement.classList.add("hidden");
+      }
+
+      dossier.classList.remove("hidden");
+      dossier.classList.add("flex");
+    }
+
+    function clearTargetMedia() {
+      activeTargetMedia = null;
+      renderTargetMediaDossier(null);
+      playPaperTick();
+    }
+
+    // ==========================================
+    // 7. Search Form & Swarm Results
+    // ==========================================
+    const searchForm = document.getElementById("searchForm");
+    const keywordInput = document.getElementById("keywordInput");
+    const searchResults = document.getElementById("searchResults");
+    const limitSelect = document.getElementById("limitSelect");
+    const sortSelect = document.getElementById("sortSelect");
+
+    searchForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const q = keywordInput.value.trim();
+      if (!q) return;
+
+      playPaperFeed();
+
+      if (!activeTargetMedia || activeTargetMedia.title.toLowerCase() !== q.toLowerCase()) {
+        activeTargetMedia = { title: q, poster: null };
+        renderTargetMediaDossier(null);
+      }
+
+      searchResults.innerHTML = `
+        <div class="col-span-2 flex flex-col items-center justify-center py-16 gap-3 text-[var(--ink-dim)] font-dot text-lg">
+          <div class="w-6 h-6 border-2 border-[var(--ink-primary)] border-t-transparent rounded-full animate-spin"></div>
+          <span>PRINTING MATCHING SWARM SLIPS...</span>
+        </div>
+      `;
+
+      try {
+        const res = await fetch(`/search-torrents?q=${encodeURIComponent(q)}&limit=${limitSelect.value}`);
+        searchTorrentList = await res.json();
+
+        // If target has no poster, adopt from first matched result
+        if (!activeTargetMedia?.poster && searchTorrentList.length) {
+          const firstWithPoster = searchTorrentList.find(t => t.poster);
+          if (firstWithPoster) {
+            activeTargetMedia = {
+              title: firstWithPoster.meta?.title || q,
+              poster: firstWithPoster.meta?.poster || firstWithPoster.poster,
+              rating: firstWithPoster.meta?.rating,
+              year: firstWithPoster.meta?.year,
+              type: firstWithPoster.meta?.type || "MEDIA"
+            };
+            renderTargetMediaDossier(activeTargetMedia);
+          }
+        }
+
+        sortAndRenderTorrents();
+      } catch (err) {
+        searchResults.innerHTML = `<p class="col-span-2 text-[var(--ink-danger)] text-xs text-center py-16 font-dot text-lg">ERROR PRINTING SEARCH SLIPS.</p>`;
+      }
+    });
+
+    sortSelect.addEventListener("change", () => {
+      playPaperTick();
+      sortAndRenderTorrents();
+    });
+
+    function sortAndRenderTorrents() {
+      if (!searchTorrentList.length) {
+        const rawQ = keywordInput.value.trim();
+        // Generate simplified query chips
+        const clean = rawQ.replace(/[:\-–—_/\\!?.'"()[\]~*+@#$&]/g, " ").replace(/\s+/g, " ").trim();
+        const suggestions = [];
+        
+        const splitDash = rawQ.split(/\s*[-–—:]\s*/);
+        if (splitDash.length > 1 && splitDash[0].trim().length >= 2) {
+          suggestions.push(splitDash[0].trim());
+        }
+        
+        const words = clean.split(" ");
+        if (words.length > 2) {
+          suggestions.push(words.slice(0, 2).join(" "));
+        }
+        if (words.length > 3) {
+          suggestions.push(words.slice(0, 3).join(" "));
+        }
+
+        const chipsHtml = suggestions.filter(s => s.toLowerCase() !== rawQ.toLowerCase())
+          .map(s => `<button onclick="quickSearch('${s.replace(/'/g, "\\'")}')" class="receipt-btn px-3 py-1 rounded text-xs text-[var(--ink-accent)] border-[var(--paper-border-dashed)] hover:border-[var(--ink-primary)]">[ 🔍 TRY: ${s} ]</button>`)
+          .join(" ");
+
+        searchResults.innerHTML = `
+          <div class="col-span-2 flex flex-col items-center justify-center py-12 gap-3 text-center">
+            <span class="font-dot text-2xl text-[var(--ink-warning)]">NO MATCHING TORRENT SLIPS LOCATED</span>
+            <p class="text-xs text-[var(--ink-dim)] max-w-md font-receipt">
+              Zero swarm packets were indexed for <span class="text-[var(--ink-primary)]">"${rawQ}"</span>.
+            </p>
+            ${chipsHtml ? `
+              <div class="flex flex-wrap items-center justify-center gap-2 pt-2">
+                <span class="text-[11px] text-[var(--ink-faint)] w-full">SUGGESTED REFINED QUERIES:</span>
+                ${chipsHtml}
+              </div>
+            ` : ''}
+          </div>
+        `;
+        return;
+      }
+
+      const sort = sortSelect.value;
+      
+      if (sort === "latest_topseed") {
+        // Find the single torrent with the highest seeds for the #1 top spot
+        let maxSeeds = -1;
+        let topSeedIndex = -1;
+        searchTorrentList.forEach((t, i) => {
+          const seeds = t.seeders || 0;
+          if (seeds > maxSeeds) {
+            maxSeeds = seeds;
+            topSeedIndex = i;
+          }
+        });
+
+        const topItem = topSeedIndex >= 0 ? searchTorrentList[topSeedIndex] : null;
+        const remaining = searchTorrentList.filter((_, i) => i !== topSeedIndex);
+        
+        // Sort remaining items by latest release order (added timestamp descending)
+        remaining.sort((a, b) => (b.added || 0) - (a.added || 0));
+        searchTorrentList = topItem ? [topItem, ...remaining] : remaining;
+      } else if (sort === "seeds") {
+        searchTorrentList.sort((a, b) => (b.seeders || 0) - (a.seeders || 0));
+      } else if (sort === "latest") {
+        searchTorrentList.sort((a, b) => (b.added || 0) - (a.added || 0));
+      } else if (sort === "peers") {
+        searchTorrentList.sort((a, b) => (b.leechers || 0) - (a.leechers || 0));
+      } else if (sort === "size_desc") {
+        searchTorrentList.sort((a, b) => (b.size || 0) - (a.size || 0));
+      } else if (sort === "size_asc") {
+        searchTorrentList.sort((a, b) => (a.size || 0) - (b.size || 0));
+      }
+
+      const limitNum = parseInt(limitSelect.value, 10) || 25;
+      const displayedTorrents = searchTorrentList.slice(0, limitNum);
+
+      searchResults.innerHTML = "";
+      displayedTorrents.forEach((t, idx) => {
+        const isTopSeed = idx === 0 && (sort === "latest_topseed" || sort === "seeds");
+        const releaseDate = t.added ? new Date(t.added * 1000).toISOString().split('T')[0] : "";
+        
+        const card = document.createElement("div");
+        card.className = `receipt-card rounded p-3 flex flex-col sm:flex-row gap-3 border border-dashed ${isTopSeed ? 'border-[var(--ink-primary)] ring-1 ring-[var(--ink-primary)]/20' : 'border-[var(--paper-border-dashed)]'}`;
+
+        const posterUrl = t.poster || activeTargetMedia?.poster || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80";
+
+        card.innerHTML = `
+          <!-- Thumbnail Frame -->
+          <div class="relative w-full sm:w-20 aspect-[16/9] sm:aspect-[2/3] shrink-0 bg-black rounded overflow-hidden border border-[var(--paper-border-dashed)]">
+            <img 
+              src="${posterUrl}" 
+              alt="Thumbnail" 
+              class="w-full h-full object-cover filter contrast-105"
+              loading="lazy"
+              onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80';"
+            />
+            <span class="absolute bottom-1 right-1 font-mono text-[9px] px-1 bg-black/90 text-[var(--ink-primary)] border border-[var(--paper-border-dashed)] rounded">
+              ${(t.size / (1024 * 1024 * 1024)).toFixed(1)}G
+            </span>
+          </div>
+
+          <!-- Slip Details & Dispatch Button -->
+          <div class="flex flex-col justify-between flex-1 min-w-0 gap-2">
+            <div>
+              <div class="flex items-start gap-1.5 flex-wrap">
+                <span class="font-dot text-sm text-[var(--ink-dim)] shrink-0">[DOCKET #${String(idx + 1).padStart(2, '0')}]</span>
+                ${isTopSeed ? `<span class="px-1.5 py-0.2 rounded bg-[var(--ink-primary)] text-black font-bold font-mono text-[9px] tracking-wider uppercase">★ TOP SEEDED #1</span>` : ''}
+                <h4 class="text-xs font-bold leading-snug line-clamp-2 text-[var(--ink-primary)] w-full mt-0.5" title="${t.name}">
+                  ${t.name}
+                </h4>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-1.5 mt-2 text-[10px]">
+                <span class="px-1.5 py-0.5 rounded bg-black/50 border border-[var(--paper-border-dashed)] font-mono text-[var(--ink-primary)]">
+                  ${(t.size / (1024 * 1024 * 1024)).toFixed(2)} GB
+                </span>
+                <span class="px-1.5 py-0.5 rounded bg-black/50 border border-[var(--paper-border-dashed)] text-[var(--ink-success)] font-bold">
+                  ▲ ${t.seeders.toLocaleString()} SEEDS
+                </span>
+                <span class="px-1.5 py-0.5 rounded bg-black/50 border border-[var(--paper-border-dashed)] text-[var(--ink-warning)] font-bold">
+                  ▼ ${t.leechers.toLocaleString()} PEERS
+                </span>
+                ${releaseDate ? `<span class="px-1.5 py-0.5 rounded bg-black/50 border border-[var(--paper-border-dashed)] text-[var(--ink-dim)] font-mono">REL: ${releaseDate}</span>` : ""}
+                ${t.imdb ? `<span class="px-1.5 py-0.5 rounded bg-black/50 border border-[var(--paper-border-dashed)] text-[var(--ink-faint)] font-mono">IMDB: ${t.imdb}</span>` : ""}
+              </div>
+            </div>
+
+            <button class="w-full sm:w-auto self-end receipt-btn-primary rounded px-3 py-1.5 text-xs tracking-wider active:scale-95 transition font-receipt">
+              ▶ PRINT & STREAM TO TORBOX
+            </button>
+          </div>
+        `;
+        card.querySelector("button").onclick = () => {
+          playPaperFeed();
+          addAndStream(t.magnet, t.name);
+        };
+        searchResults.appendChild(card);
+      });
+    }
+
+    function quickSearch(q) {
+      playPaperFeed();
+      keywordInput.value = q;
+      searchForm.dispatchEvent(new Event("submit"));
+    }
+
+    // ==========================================
+    // 8. TorBox Cache Dispatch
+    // ==========================================
+    const playerSection = document.getElementById("playerSection");
+    const mediaTitle = document.getElementById("mediaTitle");
+    const mediaSub = document.getElementById("mediaSub");
+    const externalPlayBtn = document.getElementById("externalPlayBtn");
+
+    async function addAndStream(magnet, name) {
+      if (!apiKey) {
+        alert("ERROR: AUTH TOKEN MISSING. ENTER TORBOX API KEY IN TOP SLIP.");
+        return;
+      }
+
+      playerSection.classList.remove("hidden");
+      playerSection.classList.add("flex");
+      mediaTitle.innerText = name;
+      mediaSub.innerText = "DISPATCHING MAGNET STREAM TO TORBOX CLOUD CACHE...";
+      window.scrollTo({ top: 0, behavior: "smooth" });
+
+      try {
+        const formData = new FormData();
+        formData.append("magnet", magnet);
+
+        await fetch(`${API_BASE}/torrents/createtorrent`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${apiKey}` },
+          body: formData
+        });
+
+        setTimeout(async () => {
+          switchView("library");
+        }, 2200);
+
+      } catch (err) {
+        mediaSub.innerText = "ERROR TRANSMITTING STREAM ORDER.";
+      }
+    }
+
+    // ==========================================
+    // 9. Account Statement / Cloud Library
+    // ==========================================
+    async function fetchLibrary() {
+      if (!apiKey) {
+        document.getElementById("libraryList").innerHTML = `
+          <p class="text-[var(--ink-faint)] text-xs text-center py-16 font-dot text-xl">
+            API KEY NOT CONFIGURED. ENTER TORBOX KEY IN TOP SLIP.
+          </p>
+        `;
+        return;
+      }
+
+      const libraryList = document.getElementById("libraryList");
+      libraryList.innerHTML = `
+        <div class="flex flex-col items-center justify-center py-16 gap-3 text-[var(--ink-dim)] font-dot text-lg">
+          <div class="w-6 h-6 border-2 border-[var(--ink-primary)] border-t-transparent rounded-full animate-spin"></div>
+          <span>PRINTING ACTIVE CLOUD ACCOUNT STATEMENT...</span>
+        </div>
+      `;
+
+      try {
+        const res = await fetch(`${API_BASE}/torrents/mylist?bypass_cache=true&token=${encodeURIComponent(apiKey)}`, {
+          headers: { "Authorization": `Bearer ${apiKey}` }
+        });
+        const json = await res.json();
+
+        if (json.success && json.data) {
+          renderLibrary(json.data);
+        } else {
+          libraryList.innerHTML = `<p class="text-[var(--ink-danger)] text-xs text-center py-16 font-dot text-lg">${json.detail || "ERROR PRINTING STATEMENT."}</p>`;
+        }
+      } catch (err) {
+        libraryList.innerHTML = `<p class="text-[var(--ink-danger)] text-xs text-center py-16 font-dot text-lg">CLOUD STATEMENT SYNC FAILED.</p>`;
+      }
+    }
+
+    function renderLibrary(torrents) {
+      const libraryList = document.getElementById("libraryList");
+      if (!torrents.length) {
+        libraryList.innerHTML = `<p class="text-[var(--ink-faint)] text-xs text-center py-16 font-dot text-xl">NO ACTIVE STREAM ENTRIES ON THIS ACCOUNT.</p>`;
+        return;
+      }
+
+      const mediaExtensions = [".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v"];
+      libraryList.innerHTML = "";
+
+      torrents.forEach((t, i) => {
+        const card = document.createElement("div");
+        card.className = "receipt-card rounded p-3 text-xs flex flex-col gap-2";
+
+        const header = document.createElement("div");
+        header.className = "flex items-center justify-between gap-2 border-b border-dashed border-[var(--paper-border-dashed)] pb-1.5";
+        header.innerHTML = `
+          <div class="font-bold text-[var(--ink-primary)] truncate flex items-center gap-2">
+            <span class="font-dot text-sm text-[var(--ink-dim)]">[VOL-${String(i+1).padStart(2,'0')}]</span>
+            <span class="truncate">${t.name}</span>
+          </div>
+          <span class="text-[10px] text-[var(--ink-success)] shrink-0 font-mono font-bold">${(t.download_state || "CACHED").toUpperCase()}</span>
+        `;
+        card.appendChild(header);
+
+        const fileList = document.createElement("div");
+        fileList.className = "flex flex-col gap-1 pl-2 border-l border-dashed border-[var(--paper-border-dashed)]";
+
+        if (t.files && t.files.length) {
+          t.files.forEach(f => {
+            const isMedia = mediaExtensions.some(ext => f.name.toLowerCase().endsWith(ext));
+            const row = document.createElement("button");
+            row.className = `w-full text-left py-1.5 px-2 rounded flex justify-between items-center transition font-mono ${isMedia ? "receipt-btn text-[var(--ink-primary)] hover:bg-[var(--ink-primary)] hover:text-black" : "text-[var(--ink-faint)] cursor-not-allowed bg-black/30"}`;
+            row.disabled = !isMedia;
+            row.innerHTML = `
+              <span class="truncate mr-3 flex items-center gap-1.5">
+                <span class="text-[9px]">${isMedia ? "▶" : "•"}</span>
+                <span class="truncate">${f.name.split("/").pop()}</span>
+              </span>
+              <span class="shrink-0 text-[10px] text-[var(--ink-dim)]">${(f.size / (1024 * 1024)).toFixed(0)} MB</span>
+            `;
+            if (isMedia) {
+              row.onclick = () => {
+                playPaperFeed();
+                playFile(t.id, f.id, f.name);
+              };
+            }
+            fileList.appendChild(row);
+          });
+        } else {
+          fileList.innerHTML = `<span class="text-[11px] text-[var(--ink-faint)] font-mono">STATUS: ${t.download_state || "PROCESSING"}</span>`;
+        }
+
+        card.appendChild(fileList);
+        libraryList.appendChild(card);
+      });
+    }
+
+    // ==========================================
+    // 10. Artplayer Launcher
+    // ==========================================
+    async function playFile(torrentId, fileId, fileName) {
+      playerSection.classList.remove("hidden");
+      playerSection.classList.add("flex");
+      mediaTitle.innerText = fileName.split("/").pop();
+      mediaSub.innerText = "REQUESTING DIRECT CLOUD STREAMING PIPELINE...";
+      window.scrollTo({ top: 0, behavior: "smooth" });
+
+      try {
+        const res = await fetch(`${API_BASE}/torrents/requestdl?token=${encodeURIComponent(apiKey)}&torrent_id=${torrentId}&file_id=${fileId}&zip=false`, {
+          headers: { "Authorization": `Bearer ${apiKey}` }
+        });
+        const json = await res.json();
+
+        if (!json.success || !json.data) {
+          mediaSub.innerText = `STREAM FAILURE: ${json.detail || "UNABLE TO RESOLVE"}`;
+          return;
+        }
+
+        const streamUrl = json.data;
+        externalPlayBtn.href = streamUrl;
+
+        if (art) art.destroy();
+
+        art = new Artplayer({
+          container: "#artplayer",
+          url: streamUrl,
+          type: fileName.endsWith(".mkv") ? "mkv" : "auto",
+          autoplay: true,
+          playbackRate: true,
+          aspectRatio: true,
+          setting: true,
+          pip: true,
+          fullscreen: true,
+          theme: "#f1f4f9"
+        });
+
+        art.on("video:loadedmetadata", () => {
+          mediaSub.innerText = "STREAMING DIRECT DEBRID CDN // TICKET VALIDATED";
+        });
+        art.on("error", () => {
+          mediaSub.innerText = "CODEC UNSUPPORTED IN BROWSER. CLICK 'LAUNCH VLC ↗'.";
+        });
+
+      } catch (err) {
+        mediaSub.innerText = "FAILED TO CONNECT TO STREAM CDN.";
+      }
+    }
+
+    function closePlayer() {
+      if (art) art.destroy();
+      playerSection.classList.add("hidden");
+      playerSection.classList.remove("flex");
+    }
+
+    // Initialize with Movie Inventory
+    loadCatalog("movies");
+  </script>
+</body>
+</html>
