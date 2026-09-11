@@ -1,8 +1,6 @@
 {
+  "version": 2,
   "rewrites": [
-    { "source": "/catalog", "destination": "/api/catalog" },
-    { "source": "/search-torrents", "destination": "/api/search-torrents" },
-    { "source": "/api/torrents/:path*", "destination": "/api/torrents?path=/api/torrents/:path*" },
-    { "source": "/api/:path*", "destination": "/api/torrents?path=/api/:path*" }
+    { "source": "/(.*)", "destination": "/server.js" }
   ]
 }
