@@ -1,0 +1,15 @@
+{
+  "name": "stuvio",
+  "version": "1.0.0",
+  "description": "Stuvio - Thermal Receipt Debrid Stream Player",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["stremio", "torbox", "debrid", "stream", "thermal-receipt"],
+  "author": "",
+  "license": "ISC"
+}
