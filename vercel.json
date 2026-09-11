@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/catalog", "destination": "/api/index.js?endpoint=catalog" },
+    { "source": "/search-torrents", "destination": "/api/index.js?endpoint=search-torrents" },
+    { "source": "/api/torrents/:path*", "destination": "/api/index.js?endpoint=torbox&path=/api/torrents/:path*" },
+    { "source": "/api/:path*", "destination": "/api/index.js?endpoint=torbox&path=/api/:path*" }
+  ]
+}
