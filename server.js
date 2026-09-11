@@ -6,7 +6,7 @@ const path = require("path");
 const PORT = process.env.PORT || 3000;
 
 // Fetch helper using global fetch (Node 18+) with timeout and fallback to https/http
-async function fetchJson(url, timeoutMs = 6000, maxRedirects = 3) {
+async function fetchJson(url, timeoutMs = 5000, maxRedirects = 3) {
   try {
     if (typeof fetch === "function") {
       const controller = new AbortController();
@@ -21,14 +21,11 @@ async function fetchJson(url, timeoutMs = 6000, maxRedirects = 3) {
       });
       clearTimeout(timer);
       if (!response.ok) {
-        console.error(`Fetch HTTP ${response.status} for: ${url}`);
         return null;
       }
       return await response.json();
     }
-  } catch (err) {
-    console.error(`Fetch error for ${url}:`, err.message);
-  }
+  } catch (err) {}
 
   // Fallback to legacy http/https client if fetch unavailable
   return new Promise((resolve) => {
@@ -110,39 +107,6 @@ function buildSearchQueries(raw) {
   return queries;
 }
 
-// Helper: Query apibay sequentially through query variations until results are found
-async function searchApibayWithFallbacks(queryCandidates, limit) {
-  const results = [];
-  const seenHashes = new Set();
-
-  for (const q of queryCandidates) {
-    const searchUrl = `https://apibay.org/q.php?q=${encodeURIComponent(q)}`;
-    const items = await fetchJson(searchUrl, 6000);
-
-    if (Array.isArray(items)) {
-      const validItems = items.filter(item =>
-        item.name &&
-        item.info_hash &&
-        item.info_hash !== "0000000000000000000000000000000000000000" &&
-        item.name !== "No results returned"
-      );
-
-      for (const item of validItems) {
-        if (!seenHashes.has(item.info_hash)) {
-          seenHashes.add(item.info_hash);
-          results.push(item);
-        }
-      }
-
-      if (results.length >= Math.max(limit * 2, 50)) {
-        break;
-      }
-    }
-  }
-
-  return results;
-}
-
 // Helper: Resolve Cinemeta metadata with query fallbacks (fast timeout to never block torrent search)
 async function resolveMediaMeta(queryCandidates) {
   try {
@@ -150,8 +114,8 @@ async function resolveMediaMeta(queryCandidates) {
     const searchPromise = (async () => {
       for (const q of queryCandidates.slice(0, 2)) {
         const [movieMeta, seriesMeta] = await Promise.all([
-          fetchJson(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(q)}.json`, 3000),
-          fetchJson(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(q)}.json`, 3000)
+          fetchJson(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(q)}.json`, 2500),
+          fetchJson(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(q)}.json`, 2500)
         ]);
 
         const candidates = [];
@@ -175,6 +139,220 @@ async function resolveMediaMeta(queryCandidates) {
   } catch (e) {
     return null;
   }
+}
+
+// Helper: Multi-engine Federated Swarm Scraper (Apibay + Nyaa + EZTV + YTS)
+async function scrapeTorrentSwarm(query, matchedMeta, limit = 50) {
+  const queryCandidates = buildSearchQueries(query);
+  const primaryQuery = queryCandidates[0] || query;
+  const imdbIdRaw = matchedMeta?.id || matchedMeta?.imdb_id;
+  const cleanImdbDigits = imdbIdRaw ? imdbIdRaw.replace(/^tt/, "") : null;
+
+  const trackers = [
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://open.demonii.com:1337/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://tracker.torrent.eu.org:451/announce"
+  ].map(tr => `&tr=${encodeURIComponent(tr)}`).join("");
+
+  const allTorrents = [];
+  const seenHashes = new Set();
+
+  function addTorrent(item) {
+    if (!item || !item.name || !item.info_hash) return;
+    const hash = item.info_hash.toLowerCase();
+    if (hash === "0000000000000000000000000000000000000000" || seenHashes.has(hash)) return;
+    seenHashes.add(hash);
+
+    const hasImdb = item.imdb && typeof item.imdb === "string" && item.imdb.startsWith("tt");
+    const poster = hasImdb 
+      ? `https://images.metahub.space/poster/small/${item.imdb}/img` 
+      : (matchedMeta?.poster || null);
+
+    allTorrents.push({
+      name: item.name,
+      size: parseInt(item.size, 10) || 0,
+      seeders: parseInt(item.seeders, 10) || 0,
+      leechers: parseInt(item.leechers, 10) || 0,
+      added: parseInt(item.added, 10) || 0,
+      magnet: item.magnet || `magnet:?xt=urn:btih:${item.info_hash}&dn=${encodeURIComponent(item.name)}${trackers}`,
+      imdb: hasImdb ? item.imdb : (matchedMeta?.id || null),
+      poster: poster,
+      meta: matchedMeta ? {
+        title: matchedMeta.name,
+        year: matchedMeta.releaseInfo || matchedMeta.year,
+        rating: matchedMeta.imdbRating,
+        poster: matchedMeta.poster,
+        type: matchedMeta.type
+      } : null
+    });
+  }
+
+  // Execute all scrapers in parallel
+  const scrapers = [];
+
+  // 1. SolidTorrents (Ultra-fast modern DHT indexer - unblocked on Vercel/datacenter IPs)
+  scrapers.push((async () => {
+    try {
+      for (const q of queryCandidates.slice(0, 2)) {
+        const url = `https://solidtorrents.to/api/v1/search?q=${encodeURIComponent(q)}`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.results && Array.isArray(json.results)) {
+            let count = 0;
+            json.results.forEach(t => {
+              if (t.title && t.infohash) {
+                addTorrent({
+                  name: t.title,
+                  info_hash: t.infohash,
+                  seeders: t.seeders || 0,
+                  leechers: t.leechers || 0,
+                  size: t.size || 0,
+                  added: t.createdAt ? Math.floor(Date.parse(t.createdAt) / 1000) || 0 : 0
+                });
+                count++;
+              }
+            });
+            if (count > 0 || allTorrents.length >= limit) break;
+          }
+        }
+      }
+    } catch (e) {}
+  })());
+
+  // 2. Nyaa.si (Fast Anime RSS Indexer - never blocked on Vercel)
+  scrapers.push((async () => {
+    try {
+      for (const q of queryCandidates.slice(0, 3)) {
+        const url = `https://nyaa.si/?page=rss&q=${encodeURIComponent(q)}`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
+        if (res.ok) {
+          const xml = await res.text();
+          const itemMatches = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+          let count = 0;
+          for (const itemXml of itemMatches) {
+            const titleMatch = itemXml.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/);
+            const hashMatch = itemXml.match(/<nyaa:infoHash>([a-fA-F0-9]{40})<\/nyaa:infoHash>/);
+            const seedersMatch = itemXml.match(/<nyaa:seeders>(\d+)<\/nyaa:seeders>/);
+            const leechersMatch = itemXml.match(/<nyaa:leechers>(\d+)<\/nyaa:leechers>/);
+            const dateMatch = itemXml.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+            const sizeMatch = itemXml.match(/<nyaa:size>([\s\S]*?)<\/nyaa:size>/);
+
+            if (titleMatch && hashMatch) {
+              let sizeBytes = 0;
+              if (sizeMatch) {
+                const parts = sizeMatch[1].trim().split(/\s+/);
+                const num = parseFloat(parts[0]);
+                const unit = (parts[1] || "").toLowerCase();
+                if (unit.includes("gib") || unit.includes("gb")) sizeBytes = Math.round(num * 1024 * 1024 * 1024);
+                else if (unit.includes("mib") || unit.includes("mb")) sizeBytes = Math.round(num * 1024 * 1024);
+                else if (unit.includes("kib") || unit.includes("kb")) sizeBytes = Math.round(num * 1024);
+              }
+
+              addTorrent({
+                name: titleMatch[1].trim(),
+                info_hash: hashMatch[1].trim(),
+                seeders: seedersMatch ? parseInt(seedersMatch[1], 10) : 0,
+                leechers: leechersMatch ? parseInt(leechersMatch[1], 10) : 0,
+                added: dateMatch ? Math.floor(Date.parse(dateMatch[1]) / 1000) || 0 : 0,
+                size: sizeBytes
+              });
+              count++;
+            }
+          }
+          if (count > 0 || allTorrents.length >= limit) break;
+        }
+      }
+    } catch (e) {}
+  })());
+
+  // 3. EZTV (Fast TV Shows Indexer)
+  if (cleanImdbDigits) {
+    scrapers.push((async () => {
+      try {
+        const url = `https://eztvx.to/api/get-torrents?limit=50&imdb_id=${cleanImdbDigits}`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.torrents && Array.isArray(json.torrents)) {
+            json.torrents.forEach(t => {
+              addTorrent({
+                name: t.title || t.filename,
+                info_hash: t.hash,
+                seeders: t.seeds || 0,
+                leechers: t.peers || 0,
+                added: t.date_released_unix || 0,
+                size: parseInt(t.size_bytes, 10) || 0,
+                magnet: t.magnet_url
+              });
+            });
+          }
+        }
+      } catch (e) {}
+    })());
+  }
+
+  // 4. YTS Movies Scraper
+  scrapers.push((async () => {
+    try {
+      const mirrors = ["https://yts.bz", "https://yts.rs", "https://yts.mx"];
+      for (const q of queryCandidates.slice(0, 2)) {
+        let gotYts = false;
+        for (const m of mirrors) {
+          try {
+            const url = `${m}/api/v2/list_movies.json?query_term=${encodeURIComponent(q)}&limit=20`;
+            const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+            if (res.ok) {
+              const json = await res.json();
+              if (json.data && Array.isArray(json.data.movies)) {
+                json.data.movies.forEach(movie => {
+                  if (movie.torrents && Array.isArray(movie.torrents)) {
+                    movie.torrents.forEach(t => {
+                      addTorrent({
+                        name: `${movie.title} (${movie.year}) [${t.quality}] [${t.type}] YTS`,
+                        info_hash: t.hash,
+                        seeders: t.seeds || 0,
+                        leechers: t.peers || 0,
+                        added: t.date_uploaded_unix || 0,
+                        size: t.size_bytes || 0,
+                        imdb: movie.imdb_code
+                      });
+                    });
+                  }
+                });
+                gotYts = true;
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+        if (gotYts) break;
+      }
+    } catch (e) {}
+  })());
+
+  // 5. Apibay (ThePirateBay API Fallback)
+  scrapers.push((async () => {
+    try {
+      for (const q of queryCandidates.slice(0, 2)) {
+        const url = `https://apibay.org/q.php?q=${encodeURIComponent(q)}`;
+        const items = await fetchJson(url, 3500);
+        if (Array.isArray(items)) {
+          items.forEach(t => {
+            if (t.name !== "No results returned") {
+              addTorrent(t);
+            }
+          });
+          if (allTorrents.length >= limit) break;
+        }
+      }
+    } catch (e) {}
+  })());
+
+  await Promise.allSettled(scrapers);
+
+  return allTorrents;
 }
 
 // Helper: Locate static files across common deployment directories
@@ -291,7 +469,6 @@ async function handler(req, res) {
 
   // 2. Keyword Torrent Search Endpoint (/search-torrents?q=...&limit=...)
   if (pathname === "/search-torrents" || pathname.startsWith("/search-torrents")) {
-    // Extract query parameter from all possible parsed locations
     const query = urlParams.searchParams.get("q") || 
                   reqUrlObj.searchParams.get("q") ||
                   (req.headers["x-forwarded-uri"] ? new URL(req.headers["x-forwarded-uri"], "http://localhost").searchParams.get("q") : null) ||
@@ -302,7 +479,7 @@ async function handler(req, res) {
       parseInt(
         urlParams.searchParams.get("limit") || 
         reqUrlObj.searchParams.get("limit") || 
-        "25", 
+        "50", 
         10
       ), 
       100
@@ -310,62 +487,17 @@ async function handler(req, res) {
 
     if (!query) {
       res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ 
-        error: "Missing query parameter 'q'", 
-        rawUrl: req.url, 
-        effectiveUrl,
-        headers: {
-          "x-forwarded-uri": req.headers["x-forwarded-uri"],
-          "x-matched-path": req.headers["x-matched-path"]
-        }
-      }));
+      res.end(JSON.stringify({ error: "Missing query parameter 'q'" }));
       return;
     }
 
     try {
       const queryCandidates = buildSearchQueries(query);
-      const [results, matchedMeta] = await Promise.all([
-        searchApibayWithFallbacks(queryCandidates, limit),
-        resolveMediaMeta(queryCandidates)
-      ]);
-
-      const defaultPoster = matchedMeta ? matchedMeta.poster : null;
-
-      const formatted = (Array.isArray(results) ? results : [])
-        .map(t => {
-          const trackers = [
-            "udp://tracker.opentrackr.org:1337/announce",
-            "udp://open.demonii.com:1337/announce",
-            "udp://open.stealth.si:80/announce",
-            "udp://tracker.torrent.eu.org:451/announce"
-          ].map(tr => `&tr=${encodeURIComponent(tr)}`).join("");
-
-          const hasImdb = t.imdb && typeof t.imdb === "string" && t.imdb.startsWith("tt");
-          const poster = hasImdb 
-            ? `https://images.metahub.space/poster/small/${t.imdb}/img` 
-            : defaultPoster;
-
-          return {
-            name: t.name,
-            size: parseInt(t.size, 10) || 0,
-            seeders: parseInt(t.seeders, 10) || 0,
-            leechers: parseInt(t.leechers, 10) || 0,
-            added: parseInt(t.added, 10) || 0,
-            magnet: `magnet:?xt=urn:btih:${t.info_hash}&dn=${encodeURIComponent(t.name)}${trackers}`,
-            imdb: hasImdb ? t.imdb : (matchedMeta ? matchedMeta.id : null),
-            poster: poster,
-            meta: matchedMeta ? {
-              title: matchedMeta.name,
-              year: matchedMeta.releaseInfo || matchedMeta.year,
-              rating: matchedMeta.imdbRating,
-              poster: matchedMeta.poster,
-              type: matchedMeta.type
-            } : null
-          };
-        });
+      const matchedMeta = await resolveMediaMeta(queryCandidates);
+      const results = await scrapeTorrentSwarm(query, matchedMeta, limit);
 
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(formatted));
+      res.end(JSON.stringify(results));
     } catch (err) {
       console.error("Search torrents handler error:", err);
       res.writeHead(500, { "Content-Type": "application/json" });

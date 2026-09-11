@@ -1,9 +1,9 @@
 {
   "version": 2,
   "rewrites": [
-    { "source": "/catalog(.*)", "destination": "/server.js?__route=catalog&$1" },
-    { "source": "/search-torrents(.*)", "destination": "/server.js?__route=search-torrents&$1" },
-    { "source": "/api/:path*", "destination": "/server.js?__route=api&__path=:path*" },
+    { "source": "/catalog(.*)", "destination": "/server.js?__route=catalog" },
+    { "source": "/search-torrents(.*)", "destination": "/server.js?__route=search-torrents" },
+    { "source": "/api/(.*)", "destination": "/server.js?__route=api&__path=$1" },
     { "source": "/(.*)", "destination": "/server.js" }
   ]
 }
