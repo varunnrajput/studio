@@ -582,6 +582,14 @@
 
           <div class="flex flex-wrap items-center justify-between gap-3 text-xs pt-1 text-[var(--ink-dim)]">
             <div class="flex items-center gap-2">
+              <span class="text-[10px] uppercase text-[var(--ink-faint)]">FORMAT:</span>
+              <select id="formatSelect" class="receipt-input rounded px-2.5 py-1 text-xs text-[var(--ink-success)] font-bold">
+                <option value="mp4" selected>🎬 MP4 ONLY (BROWSER NATIVE)</option>
+                <option value="all">ALL CONTAINERS (INC. MKV)</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-2">
               <span class="text-[10px] uppercase text-[var(--ink-faint)]">MAX SLIPS:</span>
               <select id="limitSelect" class="receipt-input rounded px-2 py-1 text-xs">
                 <option value="15">15 SLIPS</option>
@@ -1309,7 +1317,8 @@
       `;
 
       try {
-        const res = await fetch(`/search-torrents?q=${encodeURIComponent(q)}&limit=${limitSelect.value}`);
+        const formatParam = formatSelect ? formatSelect.value : "mp4";
+        const res = await fetch(`/search-torrents?q=${encodeURIComponent(q)}&limit=${limitSelect.value}&format=${encodeURIComponent(formatParam)}`);
         searchTorrentList = await res.json();
 
         if (!Array.isArray(searchTorrentList)) {
@@ -1354,9 +1363,37 @@
       sortAndRenderTorrents();
     });
 
+    formatSelect.addEventListener("change", () => {
+      playPaperTick();
+      if (searchTorrentList.length) {
+        sortAndRenderTorrents();
+      } else if (keywordInput.value.trim()) {
+        searchForm.dispatchEvent(new Event("submit"));
+      }
+    });
+
+    function isClientMp4(name) {
+      if (!name) return false;
+      const lower = name.toLowerCase();
+      if (/\.mkv\b|\[mkv\]|\(mkv\)|\bmkv\b/i.test(lower)) return false;
+      if (/10bit|10-bit|hi10p/i.test(lower)) return false;
+      if (lower.includes("yts") || lower.includes("yify")) return true;
+      if (/\.mp4\b|\[mp4\]|\(mp4\)|\bmp4\b|\.m4v\b/i.test(lower)) return true;
+      if ((lower.includes("x264") || lower.includes("h264") || lower.includes("h.264")) &&
+          !lower.includes("hevc") && !lower.includes("x265") && !lower.includes("h265")) return true;
+      return false;
+    }
+
     function sortAndRenderTorrents() {
-      if (!searchTorrentList.length) {
+      const isMp4Filter = formatSelect && formatSelect.value === "mp4";
+      let candidateList = searchTorrentList;
+      if (isMp4Filter) {
+        candidateList = candidateList.filter(t => t.is_mp4 !== false && isClientMp4(t.name));
+      }
+
+      if (!candidateList.length) {
         const rawQ = keywordInput.value.trim();
+        const hasMkvAlternative = searchTorrentList.length > 0;
         // Generate simplified query chips
         const clean = rawQ.replace(/[:\-–—_/\\!?.'"()[\]~*+@#$&]/g, " ").replace(/\s+/g, " ").trim();
         const suggestions = [];
@@ -1380,10 +1417,19 @@
 
         searchResults.innerHTML = `
           <div class="col-span-2 flex flex-col items-center justify-center py-12 gap-3 text-center">
-            <span class="font-dot text-2xl text-[var(--ink-warning)]">NO MATCHING TORRENT SLIPS LOCATED</span>
+            <span class="font-dot text-2xl text-[var(--ink-warning)]">
+              ${isMp4Filter ? "NO BROWSER MP4 RELEASES LOCATED" : "NO MATCHING TORRENT SLIPS LOCATED"}
+            </span>
             <p class="text-xs text-[var(--ink-dim)] max-w-md font-receipt">
-              Zero swarm packets were indexed for <span class="text-[var(--ink-primary)]">"${rawQ}"</span>.
+              ${hasMkvAlternative && isMp4Filter 
+                ? `Located ${searchTorrentList.length} swarms, but they are packaged in MKV/10-bit format (which buffers in browser).` 
+                : `Zero swarm packets were indexed for <span class="text-[var(--ink-primary)]">"${rawQ}"</span>.`}
             </p>
+            ${hasMkvAlternative && isMp4Filter ? `
+              <button onclick="formatSelect.value='all'; sortAndRenderTorrents();" class="receipt-btn-primary px-4 py-2 rounded text-xs font-bold mt-1">
+                [ ⟳ SHOW ALL ${searchTorrentList.length} RELEASES (INC. MKV / VLC) ]
+              </button>
+            ` : ''}
             ${chipsHtml ? `
               <div class="flex flex-wrap items-center justify-center gap-2 pt-2">
                 <span class="text-[11px] text-[var(--ink-faint)] w-full">SUGGESTED REFINED QUERIES:</span>
@@ -1401,7 +1447,7 @@
         // Find the single torrent with the highest seeds for the #1 top spot
         let maxSeeds = -1;
         let topSeedIndex = -1;
-        searchTorrentList.forEach((t, i) => {
+        candidateList.forEach((t, i) => {
           const seeds = t.seeders || 0;
           if (seeds > maxSeeds) {
             maxSeeds = seeds;
@@ -1409,31 +1455,32 @@
           }
         });
 
-        const topItem = topSeedIndex >= 0 ? searchTorrentList[topSeedIndex] : null;
-        const remaining = searchTorrentList.filter((_, i) => i !== topSeedIndex);
+        const topItem = topSeedIndex >= 0 ? candidateList[topSeedIndex] : null;
+        const remaining = candidateList.filter((_, i) => i !== topSeedIndex);
         
         // Sort remaining items by latest release order (added timestamp descending)
         remaining.sort((a, b) => (b.added || 0) - (a.added || 0));
-        searchTorrentList = topItem ? [topItem, ...remaining] : remaining;
+        candidateList = topItem ? [topItem, ...remaining] : remaining;
       } else if (sort === "seeds") {
-        searchTorrentList.sort((a, b) => (b.seeders || 0) - (a.seeders || 0));
+        candidateList.sort((a, b) => (b.seeders || 0) - (a.seeders || 0));
       } else if (sort === "latest") {
-        searchTorrentList.sort((a, b) => (b.added || 0) - (a.added || 0));
+        candidateList.sort((a, b) => (b.added || 0) - (a.added || 0));
       } else if (sort === "peers") {
-        searchTorrentList.sort((a, b) => (b.leechers || 0) - (a.leechers || 0));
+        candidateList.sort((a, b) => (b.leechers || 0) - (a.leechers || 0));
       } else if (sort === "size_desc") {
-        searchTorrentList.sort((a, b) => (b.size || 0) - (a.size || 0));
+        candidateList.sort((a, b) => (b.size || 0) - (a.size || 0));
       } else if (sort === "size_asc") {
-        searchTorrentList.sort((a, b) => (a.size || 0) - (b.size || 0));
+        candidateList.sort((a, b) => (a.size || 0) - (b.size || 0));
       }
 
       const limitNum = parseInt(limitSelect.value, 10) || 25;
-      const displayedTorrents = searchTorrentList.slice(0, limitNum);
+      const displayedTorrents = candidateList.slice(0, limitNum);
 
       searchResults.innerHTML = "";
       displayedTorrents.forEach((t, idx) => {
         const isTopSeed = idx === 0 && (sort === "latest_topseed" || sort === "seeds");
         const releaseDate = t.added ? new Date(t.added * 1000).toISOString().split('T')[0] : "";
+        const isMp4 = t.is_mp4 !== false && isClientMp4(t.name);
         
         const card = document.createElement("div");
         card.className = `receipt-card rounded p-3 flex flex-col sm:flex-row gap-3 border border-dashed ${isTopSeed ? 'border-[var(--ink-primary)] ring-1 ring-[var(--ink-primary)]/20' : 'border-[var(--paper-border-dashed)]'}`;
@@ -1462,6 +1509,7 @@
                 <span class="font-dot text-sm text-[var(--ink-dim)] shrink-0">[DOCKET #${String(idx + 1).padStart(2, '0')}]</span>
                 ${isTopSeed ? `<span class="px-1.5 py-0.2 rounded bg-[var(--ink-primary)] text-black font-bold font-mono text-[9px] tracking-wider uppercase">★ TOP SEEDED #1</span>` : ''}
                 <span id="cached-badge-${idx}"></span>
+                ${isMp4 ? `<span class="px-1.5 py-0.2 rounded bg-[var(--ink-accent)]/20 border border-[var(--ink-accent)] text-[var(--ink-accent)] font-bold text-[9px] font-mono tracking-wider">🎬 MP4 NATIVE</span>` : `<span class="px-1.5 py-0.2 rounded bg-[var(--ink-warning)]/20 border border-[var(--ink-warning)] text-[var(--ink-warning)] font-mono text-[9px]">📦 MKV</span>`}
                 <h4 class="text-xs font-bold leading-snug line-clamp-2 text-[var(--ink-primary)] w-full mt-0.5" title="${t.name}">
                   ${t.name}
                 </h4>
@@ -1666,12 +1714,18 @@
                 if (ingestionNotice) ingestionNotice.classList.add("hidden");
                 mediaSub.innerText = "TORBOX CACHE VERIFIED (100%) // STARTING STREAM PIPELINE...";
 
-                const mediaExtensions = [".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v"];
                 let bestFile = null;
                 if (found.files && found.files.length) {
-                  const videoFiles = found.files.filter(f => mediaExtensions.some(ext => f.name.toLowerCase().endsWith(ext)));
-                  videoFiles.sort((a, b) => (b.size || 0) - (a.size || 0));
-                  bestFile = videoFiles[0];
+                  // Prioritize native MP4 files for direct in-browser playback
+                  const mp4Files = found.files.filter(f => [".mp4", ".m4v"].some(ext => f.name.toLowerCase().endsWith(ext)));
+                  if (mp4Files.length) {
+                    mp4Files.sort((a, b) => (b.size || 0) - (a.size || 0));
+                    bestFile = mp4Files[0];
+                  } else {
+                    const videoFiles = found.files.filter(f => mediaExtensions.some(ext => f.name.toLowerCase().endsWith(ext)));
+                    videoFiles.sort((a, b) => (b.size || 0) - (a.size || 0));
+                    bestFile = videoFiles[0];
+                  }
                 }
 
                 if (bestFile) {
@@ -1817,6 +1871,7 @@
         if (t.files && t.files.length) {
           t.files.forEach(f => {
             const isMedia = mediaExtensions.some(ext => f.name.toLowerCase().endsWith(ext));
+            const isMp4 = f.name.toLowerCase().endsWith(".mp4") || f.name.toLowerCase().endsWith(".m4v");
             const row = document.createElement("button");
             row.className = `w-full text-left py-1.5 px-2 rounded flex justify-between items-center transition font-mono ${isMedia ? "receipt-btn text-[var(--ink-primary)] hover:bg-[var(--ink-primary)] hover:text-black" : "text-[var(--ink-faint)] cursor-not-allowed bg-black/30"}`;
             row.disabled = !isMedia;
@@ -1824,6 +1879,7 @@
               <span class="truncate mr-3 flex items-center gap-1.5">
                 <span class="text-[9px]">${isMedia ? (isCached ? "▶" : "⏳") : "•"}</span>
                 <span class="truncate">${f.name.split("/").pop()}</span>
+                ${isMedia ? (isMp4 ? `<span class="text-[9px] text-[var(--ink-accent)] font-bold shrink-0">[🎬 MP4]</span>` : `<span class="text-[9px] text-[var(--ink-dim)] shrink-0">[MKV]</span>`) : ''}
               </span>
               <div class="shrink-0 flex items-center gap-2">
                 ${!isCached ? `<span class="text-[9px] text-[var(--ink-warning)] font-bold">[${pct}%]</span>` : ''}

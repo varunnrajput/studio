@@ -66,8 +66,37 @@ async function fetchJson(url, timeoutMs = 5000, maxRedirects = 3) {
   });
 }
 
+// Helper: Strict classification of browser-playable MP4 containers (H.264 / AAC, 8-bit)
+function isBrowserMp4(name, isYts = false) {
+  if (isYts) return true;
+  if (!name || typeof name !== "string") return false;
+  const lower = name.toLowerCase();
+
+  // Exclude MKV containers
+  if (/\.mkv\b|\[mkv\]|\(mkv\)|\bmkv\b/i.test(lower)) return false;
+
+  // Exclude 10-bit color depth (causes browser video decoder stall)
+  if (/10bit|10-bit|hi10p/i.test(lower)) return false;
+
+  // YTS releases are guaranteed 8-bit MP4s
+  if (lower.includes("yts") || lower.includes("yify")) return true;
+
+  // Explicit MP4 extension or bracket
+  if (/\.mp4\b|\[mp4\]|\(mp4\)|\bmp4\b|\.m4v\b/i.test(lower)) {
+    return true;
+  }
+
+  // x264 / h264 with AAC without mkv/hevc
+  if ((lower.includes("x264") || lower.includes("h264") || lower.includes("h.264")) &&
+      !lower.includes("hevc") && !lower.includes("x265") && !lower.includes("h265")) {
+    return true;
+  }
+
+  return false;
+}
+
 // Helper: Normalize queries to prevent apibay fulltext parser errors on punctuation/operators
-function buildSearchQueries(raw) {
+function buildSearchQueries(raw, format = "mp4") {
   const queries = [];
   const add = (str) => {
     if (!str) return;
@@ -77,16 +106,29 @@ function buildSearchQueries(raw) {
     }
   };
 
+  const isMp4 = format === "mp4" || format === "mp4_only";
+
+  if (isMp4) {
+    add(`${raw} mp4`);
+    const cleanWords = raw.replace(/[:\-–—_/\\!?.'"()[\]~*+@#$&]/g, " ").trim().split(/\s+/).filter(Boolean);
+    if (cleanWords.length > 2) {
+      add(`${cleanWords.slice(0, 3).join(" ")} mp4`);
+      add(`${cleanWords.slice(0, 2).join(" ")} mp4`);
+    }
+  }
+
   add(raw);
 
   const dashParts = raw.split(/\s*[-–—]\s*/);
   if (dashParts.length > 1 && dashParts[0]) {
     add(dashParts[0]);
+    if (isMp4) add(`${dashParts[0].trim()} mp4`);
   }
 
   const colonParts = raw.split(/\s*:\s*/);
   if (colonParts.length > 1 && colonParts[0]) {
     add(colonParts[0]);
+    if (isMp4) add(`${colonParts[0].trim()} mp4`);
   }
 
   const words = raw.replace(/[:\-–—_/\\!?.'"()[\]~*+@#$&]/g, " ").trim().split(/\s+/).filter(Boolean);
@@ -142,8 +184,9 @@ async function resolveMediaMeta(queryCandidates) {
 }
 
 // Helper: Multi-engine Federated Swarm Scraper (Apibay + Nyaa + EZTV + YTS)
-async function scrapeTorrentSwarm(query, matchedMeta, limit = 50) {
-  const queryCandidates = buildSearchQueries(query);
+async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4") {
+  const isMp4Only = format === "mp4" || format === "mp4_only";
+  const queryCandidates = buildSearchQueries(query, format);
   const primaryQuery = queryCandidates[0] || query;
   const imdbIdRaw = matchedMeta?.id || matchedMeta?.imdb_id;
   const cleanImdbDigits = imdbIdRaw ? imdbIdRaw.replace(/^tt/, "") : null;
@@ -158,10 +201,14 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50) {
   const allTorrents = [];
   const seenHashes = new Set();
 
-  function addTorrent(item) {
+  function addTorrent(item, isYts = false) {
     if (!item || !item.name || !item.info_hash) return;
     const hash = item.info_hash.toLowerCase();
     if (hash === "0000000000000000000000000000000000000000" || seenHashes.has(hash)) return;
+
+    const isMp4 = isBrowserMp4(item.name, isYts);
+    if (isMp4Only && !isMp4) return;
+
     seenHashes.add(hash);
 
     const hasImdb = item.imdb && typeof item.imdb === "string" && item.imdb.startsWith("tt");
@@ -179,6 +226,8 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50) {
       magnet: item.magnet || `magnet:?xt=urn:btih:${item.info_hash}&dn=${encodeURIComponent(item.name)}${trackers}`,
       imdb: hasImdb ? item.imdb : (matchedMeta?.id || null),
       poster: poster,
+      is_mp4: isMp4,
+      container: isMp4 ? "mp4" : "mkv",
       meta: matchedMeta ? {
         title: matchedMeta.name,
         year: matchedMeta.releaseInfo || matchedMeta.year,
@@ -294,11 +343,13 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50) {
     })());
   }
 
-  // 4. YTS Movies Scraper
+  // 4. YTS Movies Scraper (Always 100% Browser-Native MP4s)
   scrapers.push((async () => {
     try {
       const mirrors = ["https://yts.bz", "https://yts.rs", "https://yts.mx"];
-      for (const q of queryCandidates.slice(0, 2)) {
+      for (const rawQ of queryCandidates.slice(0, 3)) {
+        const q = rawQ.replace(/\bmp4\b/gi, "").trim();
+        if (!q) continue;
         let gotYts = false;
         for (const m of mirrors) {
           try {
@@ -318,7 +369,7 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50) {
                         added: t.date_uploaded_unix || 0,
                         size: t.size_bytes || 0,
                         imdb: movie.imdb_code
-                      });
+                      }, true);
                     });
                   }
                 });
@@ -492,10 +543,14 @@ async function handler(req, res) {
       return;
     }
 
+    const format = urlParams.searchParams.get("format") || 
+                   reqUrlObj.searchParams.get("format") || 
+                   "mp4";
+
     try {
-      const queryCandidates = buildSearchQueries(query);
+      const queryCandidates = buildSearchQueries(query, format);
       const matchedMeta = await resolveMediaMeta(queryCandidates);
-      const results = await scrapeTorrentSwarm(query, matchedMeta, limit);
+      const results = await scrapeTorrentSwarm(query, matchedMeta, limit, format);
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(results));
