@@ -495,6 +495,49 @@
         <div class="w-full aspect-video bg-black rounded overflow-hidden border border-[var(--paper-border-dashed)] shadow-2xl relative">
           <div id="artplayer" class="w-full h-full"></div>
         </div>
+
+        <!-- Thermal Caption & Subtitle Control Register -->
+        <div id="captionControlSlip" class="flex flex-col gap-2.5 p-3 rounded bg-[var(--paper-sub)] border border-dashed border-[var(--paper-border-dashed)] text-xs font-mono">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-2.5 border-b border-dashed border-[var(--paper-border-dashed)] pb-2.5">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-dot text-sm text-[var(--ink-accent)] shrink-0">[CAPTIONS / SUBS]</span>
+              <select id="subtitleSelect" class="receipt-input rounded px-2.5 py-1 text-xs text-[var(--ink-primary)] font-bold max-w-xs truncate" onchange="onSubtitleSelectChange(this.value)">
+                <option value="none">CAPTIONS: OFF</option>
+              </select>
+            </div>
+
+            <!-- Subtitle Sync & Font Size Tuning -->
+            <div class="flex items-center gap-2 flex-wrap">
+              <!-- Sync adjustment -->
+              <div class="flex items-center gap-1 bg-black/50 rounded px-2 py-1 border border-[var(--paper-border-dashed)]">
+                <span class="text-[10px] text-[var(--ink-faint)]">SYNC:</span>
+                <button onclick="adjustSubtitleOffset(-0.5)" title="Delay captions by -0.5s" class="hover:text-[var(--ink-primary)] px-1 font-bold">[-0.5s]</button>
+                <span id="subtitleOffsetDisplay" class="text-[10px] text-[var(--ink-warning)] w-12 text-center font-mono">0.0s</span>
+                <button onclick="adjustSubtitleOffset(0.5)" title="Advance captions by +0.5s" class="hover:text-[var(--ink-primary)] px-1 font-bold">[+0.5s]</button>
+                <button onclick="resetSubtitleOffset()" title="Reset sync offset" class="text-[9px] text-[var(--ink-dim)] hover:text-white px-1">[RST]</button>
+              </div>
+
+              <!-- Size adjustment -->
+              <div class="flex items-center gap-1 bg-black/50 rounded px-2 py-1 border border-[var(--paper-border-dashed)]">
+                <span class="text-[10px] text-[var(--ink-faint)]">SIZE:</span>
+                <button onclick="adjustSubtitleSize(-2)" title="Decrease subtitle text size" class="hover:text-[var(--ink-primary)] px-1.5 font-bold">A-</button>
+                <span id="subtitleSizeDisplay" class="text-[10px] text-[var(--ink-primary)] w-9 text-center font-mono">20px</span>
+                <button onclick="adjustSubtitleSize(2)" title="Increase subtitle text size" class="hover:text-[var(--ink-primary)] px-1.5 font-bold">A+</button>
+              </div>
+
+              <!-- Load local subtitle file -->
+              <label class="receipt-btn px-2.5 py-1 rounded text-xs text-[var(--ink-accent)] cursor-pointer hover:border-[var(--ink-accent)] flex items-center gap-1">
+                <span>📁 LOAD .SRT/.VTT</span>
+                <input type="file" id="localSubFileInput" accept=".srt,.vtt" class="hidden" onchange="handleLocalSubtitleFile(event)" />
+              </label>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between text-[10px] text-[var(--ink-dim)] font-receipt">
+            <span id="captionStatusText">ACTIVE: NONE (SELECT A TRACK OR LOAD LOCAL SUBTITLE)</span>
+            <span id="captionSourceBadge" class="font-mono text-[var(--ink-faint)]">UTF-8 WEBVTT ENGINE</span>
+          </div>
+        </div>
       </section>
 
       <!-- ============================================================
@@ -1537,7 +1580,7 @@
         `;
         card.querySelector("button").onclick = () => {
           playPaperFeed();
-          addAndStream(t.magnet, t.name, t.info_hash);
+          addAndStream(t.magnet, t.name, t.info_hash, t.imdb);
         };
         searchResults.appendChild(card);
       });
@@ -1598,6 +1641,307 @@
       if (el) el.classList.add("hidden");
     }
 
+    // ==========================================
+    // 7B. Subtitle / Caption Management Engine
+    // ==========================================
+    let currentSubtitleOffset = 0.0;
+    let currentSubtitleSize = 20;
+    let availableSubtitleTracks = [];
+    let activeSubtitleTrack = null;
+    let activeImdbId = null;
+
+    const LANG_NAMES = {
+      eng: "English",
+      spa: "Spanish",
+      fre: "French",
+      fra: "French",
+      deu: "German",
+      ger: "German",
+      ita: "Italian",
+      por: "Portuguese",
+      pob: "Portuguese (BR)",
+      rus: "Russian",
+      jpn: "Japanese",
+      chi: "Chinese",
+      zho: "Chinese",
+      kor: "Korean",
+      ara: "Arabic",
+      hin: "Hindi",
+      dut: "Dutch",
+      nld: "Dutch",
+      pol: "Polish",
+      tur: "Turkish",
+      swe: "Swedish",
+      nor: "Norwegian",
+      fin: "Finnish",
+      dan: "Danish",
+      gre: "Greek",
+      heb: "Hebrew",
+      ind: "Indonesian",
+      vie: "Vietnamese",
+      tha: "Thai",
+      rum: "Romanian",
+      hun: "Hungarian",
+      cze: "Czech"
+    };
+
+    function srtToVtt(srtText) {
+      if (!srtText) return "";
+      return "WEBVTT\n\n" + srtText
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, (m, p1, p2) => p1 + "." + p2);
+    }
+
+    function parseSeasonEpisode(fileName) {
+      if (!fileName) return null;
+      const m1 = fileName.match(/[sS](\d{1,2})[eE](\d{1,2})/i);
+      if (m1) return { season: parseInt(m1[1], 10), episode: parseInt(m1[2], 10) };
+      const m2 = fileName.match(/(\d{1,2})x(\d{1,2})/i);
+      if (m2) return { season: parseInt(m2[1], 10), episode: parseInt(m2[2], 10) };
+      const m3 = fileName.match(/\s-\s*(\d{1,3})\b/);
+      if (m3) return { season: 1, episode: parseInt(m3[1], 10) };
+      return null;
+    }
+
+    async function loadSubtitleTrack(subObj) {
+      if (!art) return;
+      if (!subObj || subObj.url === "none") {
+        if (art.subtitle) art.subtitle.show = false;
+        activeSubtitleTrack = null;
+        const statusEl = document.getElementById("captionStatusText");
+        if (statusEl) statusEl.innerText = "ACTIVE: NONE (CAPTIONS DISABLED)";
+        return;
+      }
+
+      const statusEl = document.getElementById("captionStatusText");
+      if (statusEl) statusEl.innerText = `FETCHING CAPTIONS: ${subObj.label || subObj.lang || "TRACK"}...`;
+
+      try {
+        let vttUrl = "";
+        if (subObj.blobUrl) {
+          vttUrl = subObj.blobUrl;
+        } else {
+          let fetchUrl = subObj.url;
+          if (!fetchUrl.startsWith("blob:") && !fetchUrl.startsWith("/api/")) {
+            fetchUrl = `/api/sub-proxy?url=${encodeURIComponent(subObj.url)}`;
+          }
+          const res = await fetch(fetchUrl);
+          const text = await res.text();
+          const vtt = (subObj.type === "vtt" || text.startsWith("WEBVTT")) ? text : srtToVtt(text);
+          const blob = new Blob([vtt], { type: "text/vtt" });
+          vttUrl = URL.createObjectURL(blob);
+        }
+
+        art.subtitle.url = vttUrl;
+        art.subtitle.show = true;
+        art.subtitle.offset = currentSubtitleOffset;
+        art.subtitle.style({
+          color: "#ffffff",
+          fontSize: `${currentSubtitleSize}px`,
+          textShadow: "0 2px 4px rgba(0,0,0,0.9), 0 0 2px #000, 0 0 6px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000",
+          fontWeight: "bold"
+        });
+
+        activeSubtitleTrack = subObj;
+        if (statusEl) statusEl.innerText = `ACTIVE: ${subObj.label || subObj.lang || "TRACK"} // SYNC: ${currentSubtitleOffset >= 0 ? "+" : ""}${currentSubtitleOffset.toFixed(1)}s`;
+      } catch (err) {
+        console.error("Subtitle load error:", err);
+        if (statusEl) statusEl.innerText = `ERROR LOADING CAPTION: ${err.message}`;
+      }
+    }
+
+    async function discoverSubtitles(torrentId, fileName, imdbId) {
+      availableSubtitleTracks = [];
+      const subSelect = document.getElementById("subtitleSelect");
+      if (subSelect) {
+        subSelect.innerHTML = '<option value="none">CAPTIONS: OFF</option>';
+      }
+
+      const statusEl = document.getElementById("captionStatusText");
+      if (statusEl) statusEl.innerText = "SCANNING SWARM & CLOUD CAPTION REGISTERS...";
+
+      // 1. Scan TorBox torrent file tree for packaged subtitles (.srt / .vtt)
+      if (apiKey && torrentId) {
+        try {
+          const listRes = await fetch(`${API_BASE}/torrents/mylist?bypass_cache=true&token=${encodeURIComponent(apiKey)}`, {
+            headers: { "Authorization": `Bearer ${apiKey}` }
+          });
+          const listJson = await listRes.json();
+          if (listJson.success && Array.isArray(listJson.data)) {
+            const tFound = listJson.data.find(t => t.id === torrentId);
+            if (tFound && tFound.files) {
+              const subFiles = tFound.files.filter(f => f.name.toLowerCase().endsWith(".srt") || f.name.toLowerCase().endsWith(".vtt"));
+              for (const sf of subFiles) {
+                const subDlRes = await fetch(`${API_BASE}/torrents/requestdl?token=${encodeURIComponent(apiKey)}&torrent_id=${torrentId}&file_id=${sf.id}&zip=false`, {
+                  headers: { "Authorization": `Bearer ${apiKey}` }
+                });
+                const subDlJson = await subDlRes.json();
+                if (subDlJson.success && subDlJson.data) {
+                  availableSubtitleTracks.push({
+                    id: `tb-${sf.id}`,
+                    label: `[TORRENT] ${sf.name.split("/").pop()}`,
+                    url: subDlJson.data,
+                    type: sf.name.toLowerCase().endsWith(".vtt") ? "vtt" : "srt",
+                    source: "Torrent"
+                  });
+                }
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 2. Query OpenSubtitles via /api/subtitles
+      try {
+        const se = parseSeasonEpisode(fileName);
+        let queryParams = "";
+        if (imdbId) queryParams += `imdb=${encodeURIComponent(imdbId)}&`;
+        if (se) queryParams += `season=${se.season}&episode=${se.episode}&`;
+        const cleanTitle = fileName.split("/").pop().replace(/\.(mp4|mkv)$/i, "").replace(/[:\-–—_/\\!?.'"()[\]~*+@#$&]/g, " ").trim();
+        queryParams += `q=${encodeURIComponent(cleanTitle)}`;
+
+        const subRes = await fetch(`/api/subtitles?${queryParams}`);
+        const subData = await subRes.json();
+        if (subData.success && Array.isArray(subData.subtitles)) {
+          subData.subtitles.forEach((s, idx) => {
+            const langCode = (s.lang || "eng").toLowerCase();
+            const langName = LANG_NAMES[langCode] || langCode.toUpperCase();
+            availableSubtitleTracks.push({
+              id: `os-${s.id || idx}`,
+              label: `${langName} (OpenSubtitles - #${idx + 1})`,
+              lang: langName,
+              langCode: langCode,
+              url: s.url,
+              type: "srt",
+              source: "OpenSubtitles"
+            });
+          });
+        }
+      } catch (e) {}
+
+      // Populate dropdown
+      if (subSelect) {
+        availableSubtitleTracks.forEach((st, idx) => {
+          const opt = document.createElement("option");
+          opt.value = idx;
+          opt.innerText = st.label;
+          subSelect.appendChild(opt);
+        });
+
+        // Auto-load English subtitle if available
+        const engIdx = availableSubtitleTracks.findIndex(s => s.langCode === "eng" || s.label.toLowerCase().includes("english"));
+        if (engIdx >= 0) {
+          subSelect.value = engIdx;
+          loadSubtitleTrack(availableSubtitleTracks[engIdx]);
+        } else if (availableSubtitleTracks.length > 0) {
+          subSelect.value = 0;
+          loadSubtitleTrack(availableSubtitleTracks[0]);
+        } else {
+          subSelect.value = "none";
+          if (statusEl) statusEl.innerText = "NO CLOUD CAPTION TRACKS LOCATED. LOAD LOCAL FILE VIA [📁 LOAD .SRT/.VTT].";
+        }
+      }
+    }
+
+    function handleLocalSubtitleFile(event) {
+      playPaperTick();
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const content = e.target.result;
+        const isVtt = file.name.toLowerCase().endsWith(".vtt") || content.startsWith("WEBVTT");
+        const vtt = isVtt ? content : srtToVtt(content);
+        const blob = new Blob([vtt], { type: "text/vtt" });
+        const blobUrl = URL.createObjectURL(blob);
+
+        const localTrack = {
+          id: "local-" + Date.now(),
+          label: `[LOCAL FILE] ${file.name}`,
+          blobUrl: blobUrl,
+          type: "vtt",
+          source: "Local"
+        };
+
+        availableSubtitleTracks.unshift(localTrack);
+        const subSelect = document.getElementById("subtitleSelect");
+        if (subSelect) {
+          const opt = document.createElement("option");
+          opt.value = "0";
+          opt.innerText = localTrack.label;
+          subSelect.insertBefore(opt, subSelect.children[1] || null);
+          subSelect.value = "0";
+        }
+
+        loadSubtitleTrack(localTrack);
+      };
+      reader.readAsText(file);
+    }
+
+    function adjustSubtitleOffset(delta) {
+      playPaperTick();
+      currentSubtitleOffset = Math.round((currentSubtitleOffset + delta) * 10) / 10;
+      const disp = document.getElementById("subtitleOffsetDisplay");
+      if (disp) disp.innerText = `${currentSubtitleOffset >= 0 ? "+" : ""}${currentSubtitleOffset.toFixed(1)}s`;
+      if (art && art.subtitle) {
+        art.subtitle.offset = currentSubtitleOffset;
+        if (activeSubtitleTrack) {
+          const statusEl = document.getElementById("captionStatusText");
+          if (statusEl) statusEl.innerText = `ACTIVE: ${activeSubtitleTrack.label || "TRACK"} // SYNC: ${currentSubtitleOffset >= 0 ? "+" : ""}${currentSubtitleOffset.toFixed(1)}s`;
+        }
+      }
+    }
+
+    function resetSubtitleOffset() {
+      playPaperTick();
+      currentSubtitleOffset = 0.0;
+      const disp = document.getElementById("subtitleOffsetDisplay");
+      if (disp) disp.innerText = "0.0s";
+      if (art && art.subtitle) {
+        art.subtitle.offset = 0;
+        if (activeSubtitleTrack) {
+          const statusEl = document.getElementById("captionStatusText");
+          if (statusEl) statusEl.innerText = `ACTIVE: ${activeSubtitleTrack.label || "TRACK"} // SYNC: 0.0s`;
+        }
+      }
+    }
+
+    function adjustSubtitleSize(delta) {
+      playPaperTick();
+      currentSubtitleSize = Math.max(14, Math.min(44, currentSubtitleSize + delta));
+      const disp = document.getElementById("subtitleSizeDisplay");
+      if (disp) disp.innerText = `${currentSubtitleSize}px`;
+      if (art && art.subtitle) {
+        art.subtitle.style({ fontSize: `${currentSubtitleSize}px` });
+      }
+    }
+
+    function onSubtitleSelectChange(val) {
+      playPaperTick();
+      if (val === "none") {
+        loadSubtitleTrack(null);
+      } else {
+        const idx = parseInt(val, 10);
+        if (!isNaN(idx) && availableSubtitleTracks[idx]) {
+          loadSubtitleTrack(availableSubtitleTracks[idx]);
+        }
+      }
+    }
+
+    function toggleSubtitles() {
+      playPaperTick();
+      if (!art || !art.subtitle) return;
+      art.subtitle.show = !art.subtitle.show;
+      const statusEl = document.getElementById("captionStatusText");
+      if (!art.subtitle.show) {
+        if (statusEl) statusEl.innerText = "ACTIVE: NONE (CAPTIONS MUTED)";
+      } else if (activeSubtitleTrack) {
+        if (statusEl) statusEl.innerText = `ACTIVE: ${activeSubtitleTrack.label || "TRACK"} // SYNC: ${currentSubtitleOffset >= 0 ? "+" : ""}${currentSubtitleOffset.toFixed(1)}s`;
+      }
+    }
+
     function updateExternalPlayerLinks(url, fileName) {
       currentStreamUrl = url;
       if (externalPlayBtn) {
@@ -1633,11 +1977,13 @@
       });
     }
 
-    async function addAndStream(magnet, name, infoHash) {
+    async function addAndStream(magnet, name, infoHash, imdb) {
       if (!apiKey) {
         alert("ERROR: AUTH TOKEN MISSING. ENTER TORBOX API KEY IN TOP SLIP.");
         return;
       }
+
+      activeImdbId = imdb || activeTargetMedia?.imdb || null;
 
       if (ingestionPollTimer) {
         clearInterval(ingestionPollTimer);
@@ -1729,7 +2075,7 @@
                 }
 
                 if (bestFile) {
-                  playFile(found.id, bestFile.id, bestFile.name);
+                  playFile(found.id, bestFile.id, bestFile.name, activeImdbId);
                 } else {
                   switchView("library");
                   fetchLibrary();
@@ -1890,9 +2236,9 @@
               row.onclick = () => {
                 playPaperFeed();
                 if (!isCached) {
-                  addAndStream(t.magnet || "", t.name, t.hash);
+                  addAndStream(t.magnet || "", t.name, t.hash, t.imdb);
                 } else {
-                  playFile(t.id, f.id, f.name);
+                  playFile(t.id, f.id, f.name, t.imdb);
                 }
               };
             }
@@ -1928,7 +2274,7 @@
     // ==========================================
     // 10. Artplayer Launcher & Codec Stall Guard
     // ==========================================
-    async function playFile(torrentId, fileId, fileName) {
+    async function playFile(torrentId, fileId, fileName, imdbId) {
       playerSection.classList.remove("hidden");
       playerSection.classList.add("flex");
       mediaTitle.innerText = fileName.split("/").pop();
@@ -1973,7 +2319,29 @@
           setting: true,
           pip: true,
           fullscreen: true,
-          theme: "#f1f4f9",
+          theme: "#38bdf8",
+          subtitle: {
+            url: "",
+            type: "vtt",
+            style: {
+              color: "#ffffff",
+              fontSize: `${currentSubtitleSize}px`,
+              textShadow: "0 2px 4px rgba(0,0,0,0.9), 0 0 2px #000, 0 0 6px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000",
+              fontWeight: "bold",
+              fontFamily: "'Space Mono', monospace, sans-serif"
+            },
+            encoding: "utf-8"
+          },
+          controls: [
+            {
+              position: "right",
+              html: '<button style="background:transparent;border:none;color:#f1f4f9;font-weight:bold;font-size:12px;cursor:pointer;padding:0 6px;" title="Toggle Capt">[CC]</button>',
+              tooltip: "Toggle Captions",
+              click: function() {
+                toggleSubtitles();
+              }
+            }
+          ],
           customType: {
             m3u8: function(video, url, art) {
               if (window.Hls && Hls.isSupported()) {
@@ -1988,6 +2356,10 @@
             }
           }
         });
+
+        // Trigger Subtitle Auto-Discovery
+        currentImdbId = imdbId || activeTargetMedia?.imdb || null;
+        discoverSubtitles(torrentId, fileName, currentImdbId);
 
         mediaSub.innerText = "VALIDATING CDN BUFFER & HARDWARE CODECS...";
 
@@ -2051,6 +2423,13 @@
       if (codecNotice) codecNotice.classList.add("hidden");
       const ingestionNotice = document.getElementById("ingestionNotice");
       if (ingestionNotice) ingestionNotice.classList.add("hidden");
+
+      availableSubtitleTracks = [];
+      activeSubtitleTrack = null;
+      const subSelect = document.getElementById("subtitleSelect");
+      if (subSelect) subSelect.innerHTML = '<option value="none">CAPTIONS: OFF</option>';
+      const statusEl = document.getElementById("captionStatusText");
+      if (statusEl) statusEl.innerText = "ACTIVE: NONE (SELECT A TRACK OR LOAD LOCAL SUBTITLE)";
 
       playerSection.classList.add("hidden");
       playerSection.classList.remove("flex");

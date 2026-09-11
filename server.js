@@ -562,7 +562,87 @@ async function handler(req, res) {
     return;
   }
 
-  // 3. TorBox API Forwarding (/api/...)
+  // 3. Captions & Subtitles Engine (/api/subtitles?imdb=...&season=...&episode=...&q=...)
+  if (pathname === "/api/subtitles") {
+    const imdb = urlParams.searchParams.get("imdb") || reqUrlObj.searchParams.get("imdb");
+    const season = urlParams.searchParams.get("season") || reqUrlObj.searchParams.get("season");
+    const episode = urlParams.searchParams.get("episode") || reqUrlObj.searchParams.get("episode");
+    const q = urlParams.searchParams.get("q") || reqUrlObj.searchParams.get("q");
+
+    try {
+      let targetImdb = imdb;
+      if (!targetImdb && q) {
+        const cleanQuery = q.replace(/\bmp4\b|\bmkv\b/gi, "").trim() || q;
+        const queryCandidates = buildSearchQueries(cleanQuery, "all");
+        const meta = await resolveMediaMeta(queryCandidates);
+        if (meta && (meta.id || meta.imdb_id)) {
+          targetImdb = meta.id || meta.imdb_id;
+        }
+      }
+
+      if (!targetImdb) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: true, subtitles: [] }));
+        return;
+      }
+
+      let subUrl = "";
+      if (season && episode) {
+        subUrl = `https://opensubtitles-v3.strem.io/subtitles/series/${targetImdb}:${season}:${episode}.json`;
+      } else {
+        subUrl = `https://opensubtitles-v3.strem.io/subtitles/movie/${targetImdb}.json`;
+      }
+
+      const json = await fetchJson(subUrl, 4000);
+      const subs = (json && Array.isArray(json.subtitles)) ? json.subtitles : [];
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        success: true,
+        imdb: targetImdb,
+        subtitles: subs.map(s => ({
+          id: s.id,
+          lang: s.lang,
+          url: s.url,
+          fileName: s.subtitleFileName || s.movieReleaseName || "subtitle.srt"
+        }))
+      }));
+    } catch (e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ success: false, subtitles: [], error: e.message }));
+    }
+    return;
+  }
+
+  // 4. Subtitle CORS Safe Stream Proxy (/api/sub-proxy?url=...)
+  if (pathname === "/api/sub-proxy") {
+    const target = urlParams.searchParams.get("url") || reqUrlObj.searchParams.get("url");
+    if (!target) {
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end("Missing url parameter");
+      return;
+    }
+    try {
+      const parsed = new URL(target);
+      const client = parsed.protocol === "http:" ? http : https;
+      client.get(target, (pRes) => {
+        res.writeHead(pRes.statusCode, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Access-Control-Allow-Origin": "*"
+        });
+        pRes.pipe(res);
+      }).on("error", (e) => {
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end("Proxy error: " + e.message);
+      });
+    } catch (e) {
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end("Invalid URL");
+    }
+    return;
+  }
+
+  // 5. TorBox API Forwarding (/api/...)
   if (pathname.startsWith("/api/")) {
     const forwardParams = new URLSearchParams(reqUrlObj.search);
     for (const [k, v] of urlParams.searchParams.entries()) {
