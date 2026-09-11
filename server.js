@@ -5,8 +5,28 @@ const path = require("path");
 
 const PORT = process.env.PORT || 3000;
 
-// Fetch helper with redirect handling (301/302/307/308) and standard browser headers
-function fetchJson(url, maxRedirects = 3) {
+// Fetch helper using global fetch (Node 18+) with fallback to https/http
+async function fetchJson(url, maxRedirects = 3) {
+  try {
+    if (typeof fetch === "function") {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          "Accept": "application/json, text/plain, */*"
+        },
+        redirect: "follow"
+      });
+      if (!response.ok) {
+        console.error(`Fetch HTTP ${response.status} for: ${url}`);
+        return null;
+      }
+      return await response.json();
+    }
+  } catch (err) {
+    console.error(`Global fetch error for ${url}:`, err.message);
+  }
+
+  // Fallback to legacy http/https client if fetch unavailable
   return new Promise((resolve) => {
     if (maxRedirects < 0) return resolve(null);
 
@@ -29,7 +49,6 @@ function fetchJson(url, maxRedirects = 3) {
       }
 
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        console.error(`API returned HTTP ${res.statusCode} for: ${url}`);
         return resolve(null);
       }
 
@@ -39,14 +58,10 @@ function fetchJson(url, maxRedirects = 3) {
         try {
           resolve(JSON.parse(data));
         } catch (e) {
-          console.error(`JSON parse error from ${url}:`, e.message);
           resolve(null);
         }
       });
-    }).on("error", (err) => {
-      console.error(`Network error requesting ${url}:`, err.message);
-      resolve(null);
-    });
+    }).on("error", () => resolve(null));
   });
 }
 
@@ -148,6 +163,9 @@ async function resolveMediaMeta(queryCandidates) {
 
 // Helper: Locate static files across common deployment directories
 function findStaticFile(filename) {
+  // Prevent serving server source code
+  if (filename === "server.js" || filename === "server") return null;
+
   const candidates = [
     path.join(__dirname, filename),
     path.join(process.cwd(), filename),
@@ -175,8 +193,41 @@ async function handler(req, res) {
     return;
   }
 
-  const urlParams = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-  const pathname = urlParams.pathname;
+  // Resolve original client URL (supports Vercel rewrites, x-forwarded-uri, x-matched-path)
+  let effectiveUrl = req.headers["x-forwarded-uri"] || 
+                     (req.headers["x-matched-path"] ? req.headers["x-matched-path"] + (req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "") : req.url);
+
+  const urlParams = new URL(effectiveUrl, `http://${req.headers.host || "localhost"}`);
+  let pathname = urlParams.pathname;
+
+  // If Vercel rewrote pathname to /server.js, inspect query parameter or x-matched-path
+  if (pathname === "/server.js" || pathname === "/server") {
+    const route = urlParams.searchParams.get("__route");
+    if (route === "catalog") {
+      pathname = "/catalog";
+    } else if (route === "search-torrents") {
+      pathname = "/search-torrents";
+    } else if (route === "api") {
+      const sub = urlParams.searchParams.get("__path") || "";
+      pathname = "/api/" + sub.replace(/^\/+/, "");
+    } else if (req.headers["x-matched-path"] && req.headers["x-matched-path"] !== "/server.js") {
+      pathname = req.headers["x-matched-path"];
+    } else {
+      pathname = "/";
+    }
+  }
+
+  // Health & diagnostic endpoint
+  if (pathname === "/api/health" || pathname === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      status: "ok",
+      effectiveUrl,
+      pathname,
+      nodeVersion: process.version
+    }));
+    return;
+  }
 
   // 1. Recommendation Feed Catalog (/catalog?type=movies|series|anime)
   if (pathname === "/catalog" || pathname.startsWith("/catalog")) {
@@ -285,7 +336,12 @@ async function handler(req, res) {
 
   // 3. TorBox API Forwarding (/api/...)
   if (pathname.startsWith("/api/")) {
-    const targetUrl = new URL(`https://api.torbox.app/v1${pathname}${urlParams.search}`);
+    const forwardParams = new URLSearchParams(urlParams.search);
+    forwardParams.delete("__route");
+    forwardParams.delete("__path");
+    const qs = forwardParams.toString() ? `?${forwardParams.toString()}` : "";
+
+    const targetUrl = new URL(`https://api.torbox.app/v1${pathname}${qs}`);
     const options = {
       hostname: targetUrl.hostname,
       path: targetUrl.pathname + targetUrl.search,
@@ -317,7 +373,10 @@ async function handler(req, res) {
   }
 
   // 4. Static File Serving (with automatic index.html fallback)
-  const parsedPath = (pathname === "/" || pathname === "") ? "index.html" : pathname.replace(/^\//, "");
+  const parsedPath = (pathname === "/" || pathname === "" || pathname === "server.js" || pathname === "/server.js") 
+    ? "index.html" 
+    : pathname.replace(/^\//, "");
+  
   let filePath = findStaticFile(parsedPath);
 
   // SPA fallback to index.html if route doesn't match an asset
