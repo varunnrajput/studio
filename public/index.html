@@ -315,8 +315,14 @@
           <div>CASHIER: <span class="text-[var(--ink-primary)]">TORBOX_DAEMON</span></div>
           <div class="text-right">REGISTER: <span class="text-[var(--ink-primary)]">POS-01 (ACTIVE)</span></div>
           <div>SWARM CACHE: <span class="text-[var(--ink-success)] font-bold">READY (100%)</span></div>
-          <div class="text-right">
-            <button onclick="toggleAudio()" class="hover:underline text-[var(--ink-primary)] flex items-center gap-1 ml-auto">
+          <div class="text-right flex items-center justify-end gap-2 sm:gap-3">
+            <button onclick="lockRegister()" class="hover:underline text-[var(--ink-warning)] flex items-center gap-1 font-receipt" title="Lock Register Terminal">
+              <span>[LOCK 🔒]</span>
+            </button>
+            <button onclick="changeSecurityPin()" class="hover:underline text-[var(--ink-faint)] hover:text-[var(--ink-primary)] flex items-center gap-1 font-receipt" title="Change Security PIN">
+              <span>[PIN ⚙]</span>
+            </button>
+            <button onclick="toggleAudio()" class="hover:underline text-[var(--ink-primary)] flex items-center gap-1 font-receipt">
               <span id="audioStatusDot" class="w-1.5 h-1.5 rounded-full bg-[var(--ink-success)] inline-block"></span>
               <span id="audioLabel">AUDIO: ON</span>
             </button>
@@ -329,21 +335,41 @@
         <div class="flex flex-col sm:flex-row items-center justify-between gap-2.5 py-1 text-xs">
           <div class="flex items-center gap-2 w-full sm:w-auto">
             <span class="text-[11px] text-[var(--ink-faint)] uppercase whitespace-nowrap">AUTH TOKEN:</span>
-            <input 
-              id="apiKeyInput" 
-              type="password" 
-              placeholder="ENTER TORBOX API KEY..." 
-              class="receipt-input px-3 py-1.5 rounded text-xs tracking-wider w-full sm:w-64"
-            />
+            <div class="relative w-full sm:w-64">
+              <input 
+                id="apiKeyInput" 
+                type="password" 
+                placeholder="ENTER TORBOX API KEY..." 
+                class="receipt-input px-3 py-1.5 pr-8 rounded text-xs tracking-wider w-full"
+              />
+              <button 
+                type="button" 
+                onclick="toggleApiKeyVisibility()" 
+                id="toggleKeyVisBtn" 
+                class="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-dim)] hover:text-[var(--ink-primary)] text-xs font-mono select-none"
+                title="Show / Hide Key"
+              >👁</button>
+            </div>
           </div>
-          <button 
-            id="connectBtn" 
-            onclick="saveApiKey()" 
-            class="receipt-btn px-4 py-1.5 rounded text-xs tracking-wider font-bold w-full sm:w-auto active:scale-95"
-          >
-            [ VALIDATE & SAVE ]
-          </button>
+          <div class="flex items-center gap-2 w-full sm:w-auto">
+            <button 
+              id="connectBtn" 
+              onclick="saveApiKey()" 
+              class="receipt-btn px-4 py-1.5 rounded text-xs tracking-wider font-bold flex-1 sm:flex-initial active:scale-95"
+            >
+              [ VALIDATE & SAVE ]
+            </button>
+            <button 
+              id="resetKeyBtn" 
+              onclick="resetToDefaultKey()" 
+              class="receipt-btn px-3 py-1.5 rounded text-xs tracking-wider font-bold text-[var(--ink-dim)] hover:text-[var(--ink-danger)] active:scale-95"
+              title="Reset to default hardcoded key"
+            >
+              [ RESET ]
+            </button>
+          </div>
         </div>
+        <div id="keyStatusBadge" class="text-[10px] text-[var(--ink-faint)] text-left pb-1"></div>
 
         <div class="receipt-rule-dashed"></div>
 
@@ -616,12 +642,101 @@
   </main> <!-- /receipt-roll -->
 
   <!-- ============================================================
+       STUVIO POS SECURITY TERMINAL PIN LOCK MODAL
+       ============================================================ -->
+  <div 
+    id="terminalLockModal" 
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 transition-all duration-300"
+  >
+    <div class="receipt-body max-w-sm w-full p-6 space-y-4 rounded-lg border border-[var(--paper-edge)] shadow-2xl relative">
+      <div class="receipt-sawtooth-top -mt-6"></div>
+
+      <div class="text-center space-y-1 select-none">
+        <div class="barcode-container flex justify-center gap-[2px] opacity-60 py-1">
+          <span class="barcode-line w-[2px]"></span>
+          <span class="barcode-line w-[4px]"></span>
+          <span class="barcode-line w-[1px]"></span>
+          <span class="barcode-line w-[3px]"></span>
+          <span class="barcode-line w-[2px]"></span>
+          <span class="barcode-line w-[5px]"></span>
+          <span class="barcode-line w-[3px]"></span>
+          <span class="barcode-line w-[1px]"></span>
+          <span class="barcode-line w-[4px]"></span>
+        </div>
+        <h2 class="font-dot text-2xl font-bold tracking-wider text-[var(--ink-primary)]">
+          * SECURITY REGISTER *
+        </h2>
+        <p class="text-xs text-[var(--ink-dim)] uppercase tracking-widest font-receipt">
+          TERMINAL LOCKED // ACCESS RESTRICTED
+        </p>
+        <div class="receipt-rule-double my-2"></div>
+        <p class="text-[11px] text-[var(--ink-faint)] font-mono">
+          ENTER 4-TO-6 DIGIT AUTHORIZATION PIN
+        </p>
+      </div>
+
+      <div 
+        id="pinDisplayContainer" 
+        class="flex justify-center items-center gap-2.5 py-3 transition-transform duration-100"
+      ></div>
+
+      <div 
+        id="pinStatusMsg" 
+        class="text-center font-receipt text-xs min-h-[20px] text-[var(--ink-dim)] transition-colors duration-200"
+      >
+        AWAITING SECURITY PIN...
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 font-mono text-base font-bold select-none">
+        <button onclick="enterPinDigit('1')" class="receipt-btn py-3 rounded text-center active:scale-95">1</button>
+        <button onclick="enterPinDigit('2')" class="receipt-btn py-3 rounded text-center active:scale-95">2</button>
+        <button onclick="enterPinDigit('3')" class="receipt-btn py-3 rounded text-center active:scale-95">3</button>
+        <button onclick="enterPinDigit('4')" class="receipt-btn py-3 rounded text-center active:scale-95">4</button>
+        <button onclick="enterPinDigit('5')" class="receipt-btn py-3 rounded text-center active:scale-95">5</button>
+        <button onclick="enterPinDigit('6')" class="receipt-btn py-3 rounded text-center active:scale-95">6</button>
+        <button onclick="enterPinDigit('7')" class="receipt-btn py-3 rounded text-center active:scale-95">7</button>
+        <button onclick="enterPinDigit('8')" class="receipt-btn py-3 rounded text-center active:scale-95">8</button>
+        <button onclick="enterPinDigit('9')" class="receipt-btn py-3 rounded text-center active:scale-95">9</button>
+        <button onclick="clearPin()" class="receipt-btn py-3 rounded text-center text-[var(--ink-warning)] active:scale-95 text-xs">CLR</button>
+        <button onclick="enterPinDigit('0')" class="receipt-btn py-3 rounded text-center active:scale-95">0</button>
+        <button onclick="submitPin()" class="receipt-btn py-3 rounded text-center text-[var(--ink-success)] active:scale-95 text-xs">ENT</button>
+      </div>
+
+      <div class="flex items-center justify-between pt-2 text-[11px] text-[var(--ink-dim)] font-receipt select-none">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox" id="rememberPinCheckbox" class="accent-[var(--ink-primary)]" checked />
+          <span>REMEMBER THIS DEVICE</span>
+        </label>
+      </div>
+
+      <div class="receipt-sawtooth-bottom -mb-6"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
        APPLICATION LOGIC & THERMAL PRINTER AUDIO ENGINE
        ============================================================ -->
   <script>
+    // =========================================================================
+    // STUVIO SECURITY & CONFIGURATION
+    // You can hardcode your default TorBox API Key and Access PIN here!
+    // =========================================================================
+    const DEFAULT_CONFIG = {
+      // Put your default TorBox API key here (e.g. "your_torbox_api_key"):
+      TORBOX_API_KEY: "",
+      
+      // Default 4-to-6 digit security PIN:
+      SECURITY_PIN: "1234"
+    };
+
+    function getActivePin() {
+      return localStorage.getItem("stuvio_custom_pin") || DEFAULT_CONFIG.SECURITY_PIN;
+    }
+
     const API_BASE = "/api";
     let art = null;
-    let apiKey = localStorage.getItem("stuvio_tb_key") || "";
+    let apiKey = localStorage.getItem("stuvio_tb_key") || DEFAULT_CONFIG.TORBOX_API_KEY || "";
+    let currentPinInput = "";
     let searchTorrentList = [];
     let activeTargetMedia = null;
 
@@ -666,11 +781,31 @@
             setTimeout(() => this.tick(), i * 35);
           }
         } catch (e) {}
+      },
+      buzzer() {
+        if (this.muted) return;
+        try {
+          this.init();
+          if (!this.ctx) return;
+          if (this.ctx.state === "suspended") this.ctx.resume();
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(160, this.ctx.currentTime);
+          osc.frequency.linearRampToValueAtTime(110, this.ctx.currentTime + 0.15);
+          gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.15);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.15);
+        } catch (e) {}
       }
     };
 
     function playPaperTick() { ThermalPrinterAudio.tick(); }
     function playPaperFeed() { ThermalPrinterAudio.paperFeed(); }
+    function playWarningBuzzer() { ThermalPrinterAudio.buzzer(); }
 
     function toggleAudio() {
       ThermalPrinterAudio.muted = !ThermalPrinterAudio.muted;
@@ -713,17 +848,229 @@
     updateClock();
 
     // ==========================================
-    // 3. TorBox API Key Storage
+    // 3. Security Terminal PIN Functions
+    // ==========================================
+    function renderPinSlots() {
+      const activePin = getActivePin();
+      const container = document.getElementById("pinDisplayContainer");
+      if (!container) return;
+      container.innerHTML = "";
+      for (let i = 0; i < activePin.length; i++) {
+        const slot = document.createElement("div");
+        slot.className = "pin-slot w-10 h-12 border border-[var(--paper-edge)] bg-[var(--paper-bg-dark)] rounded flex items-center justify-center font-mono text-xl text-[var(--ink-primary)] font-bold transition-all duration-150";
+        container.appendChild(slot);
+      }
+    }
+
+    function enterPinDigit(digit) {
+      const activePin = getActivePin();
+      if (currentPinInput.length >= activePin.length) return;
+      currentPinInput += digit;
+      playPaperTick();
+      updatePinDisplay();
+      if (currentPinInput.length === activePin.length) {
+        setTimeout(submitPin, 100);
+      }
+    }
+
+    function clearPin() {
+      currentPinInput = "";
+      playPaperTick();
+      updatePinDisplay();
+      const statusMsg = document.getElementById("pinStatusMsg");
+      if (statusMsg) {
+        statusMsg.className = "text-center font-receipt text-xs min-h-[20px] text-[var(--ink-dim)]";
+        statusMsg.innerText = "AWAITING SECURITY PIN...";
+      }
+    }
+
+    function updatePinDisplay() {
+      const slots = document.querySelectorAll(".pin-slot");
+      slots.forEach((slot, index) => {
+        if (index < currentPinInput.length) {
+          slot.innerText = "•";
+          slot.classList.add("border-[var(--ink-primary)]", "bg-[var(--paper-bg)]", "text-[var(--ink-primary)]");
+        } else if (index === currentPinInput.length) {
+          slot.innerText = "_";
+          slot.classList.remove("border-[var(--ink-primary)]", "bg-[var(--paper-bg)]");
+        } else {
+          slot.innerText = "";
+          slot.classList.remove("border-[var(--ink-primary)]", "bg-[var(--paper-bg)]");
+        }
+      });
+    }
+
+    function submitPin() {
+      const statusMsg = document.getElementById("pinStatusMsg");
+      const modal = document.getElementById("terminalLockModal");
+      const remember = document.getElementById("rememberPinCheckbox")?.checked;
+      const activePin = getActivePin();
+
+      if (currentPinInput === activePin) {
+        playPaperFeed();
+        if (statusMsg) {
+          statusMsg.className = "text-center font-receipt text-xs min-h-[20px] text-[var(--ink-success)] font-bold";
+          statusMsg.innerText = "[✓] PIN ACCEPTED // REGISTER UNLOCKED";
+        }
+        
+        if (remember) {
+          localStorage.setItem("stuvio_terminal_unlocked", "true");
+        } else {
+          sessionStorage.setItem("stuvio_terminal_unlocked", "true");
+        }
+
+        setTimeout(() => {
+          if (modal) {
+            modal.classList.add("opacity-0", "pointer-events-none");
+            setTimeout(() => {
+              modal.classList.add("hidden");
+            }, 300);
+          }
+        }, 300);
+      } else {
+        playWarningBuzzer();
+        if (statusMsg) {
+          statusMsg.className = "text-center font-receipt text-xs min-h-[20px] text-[var(--ink-danger)] font-bold animate-pulse";
+          statusMsg.innerText = "[!] ACCESS DENIED // INVALID PIN";
+        }
+        
+        const container = document.getElementById("pinDisplayContainer");
+        if (container) {
+          container.classList.add("translate-x-2");
+          setTimeout(() => container.classList.remove("translate-x-2"), 80);
+          setTimeout(() => container.classList.add("-translate-x-2"), 160);
+          setTimeout(() => {
+            container.classList.remove("-translate-x-2");
+            currentPinInput = "";
+            updatePinDisplay();
+          }, 400);
+        }
+      }
+    }
+
+    function lockRegister() {
+      playPaperTick();
+      localStorage.removeItem("stuvio_terminal_unlocked");
+      sessionStorage.removeItem("stuvio_terminal_unlocked");
+      currentPinInput = "";
+      renderPinSlots();
+      updatePinDisplay();
+      const modal = document.getElementById("terminalLockModal");
+      if (modal) {
+        modal.classList.remove("hidden", "opacity-0", "pointer-events-none");
+      }
+      const statusMsg = document.getElementById("pinStatusMsg");
+      if (statusMsg) {
+        statusMsg.className = "text-center font-receipt text-xs min-h-[20px] text-[var(--ink-dim)]";
+        statusMsg.innerText = "TERMINAL LOCKED. ENTER PIN:";
+      }
+    }
+
+    function checkInitialLockState() {
+      const isUnlocked = localStorage.getItem("stuvio_terminal_unlocked") === "true" ||
+                         sessionStorage.getItem("stuvio_terminal_unlocked") === "true";
+      const modal = document.getElementById("terminalLockModal");
+      if (!modal) return;
+      if (isUnlocked) {
+        modal.classList.add("hidden", "opacity-0", "pointer-events-none");
+      } else {
+        renderPinSlots();
+        modal.classList.remove("hidden", "opacity-0", "pointer-events-none");
+        updatePinDisplay();
+      }
+    }
+
+    function changeSecurityPin() {
+      const activePin = getActivePin();
+      const current = prompt("VERIFICATION REQUIRED: ENTER CURRENT SECURITY PIN:");
+      if (!current) return;
+      if (current !== activePin) {
+        playWarningBuzzer();
+        alert("ERROR: INCORRECT CURRENT SECURITY PIN.");
+        return;
+      }
+      const newPin = prompt("ENTER NEW 4-TO-6 DIGIT SECURITY PIN:");
+      if (!newPin || newPin.trim().length < 4 || newPin.trim().length > 6 || !/^\d+$/.test(newPin.trim())) {
+        alert("INVALID PIN: MUST BE 4 TO 6 NUMERIC DIGITS.");
+        return;
+      }
+      localStorage.setItem("stuvio_custom_pin", newPin.trim());
+      playPaperFeed();
+      renderPinSlots();
+      alert(`PIN UPDATED SUCCESSFULLY // REGISTER NOW SECURED WITH PIN: ${newPin.trim()}`);
+    }
+
+    window.addEventListener("keydown", (e) => {
+      const modal = document.getElementById("terminalLockModal");
+      if (!modal || modal.classList.contains("hidden")) return;
+
+      if (e.key >= "0" && e.key <= "9") {
+        enterPinDigit(e.key);
+      } else if (e.key === "Backspace") {
+        if (currentPinInput.length > 0) {
+          currentPinInput = currentPinInput.slice(0, -1);
+          playPaperTick();
+          updatePinDisplay();
+        }
+      } else if (e.key === "Enter") {
+        submitPin();
+      } else if (e.key === "Escape") {
+        clearPin();
+      }
+    });
+
+    // ==========================================
+    // 4. TorBox API Key Storage & Sync
     // ==========================================
     const apiKeyInput = document.getElementById("apiKeyInput");
-    if (apiKey) apiKeyInput.value = apiKey;
+    const keyStatusBadge = document.getElementById("keyStatusBadge");
+
+    function updateApiKeyStatusUI() {
+      const storedKey = localStorage.getItem("stuvio_tb_key");
+      if (apiKeyInput) {
+        apiKeyInput.value = apiKey;
+      }
+      if (keyStatusBadge) {
+        if (storedKey) {
+          keyStatusBadge.innerHTML = `<span class="text-[var(--ink-success)] font-bold">● CUSTOM USER KEY ACTIVE</span> <button onclick="resetToDefaultKey()" class="underline hover:text-[var(--ink-primary)] ml-1">[RESTORE HARDCODED KEY]</button>`;
+        } else if (DEFAULT_CONFIG.TORBOX_API_KEY) {
+          keyStatusBadge.innerHTML = `<span class="text-[var(--ink-primary)] font-bold">● HARDCODED DEFAULT KEY ACTIVE</span>`;
+        } else {
+          keyStatusBadge.innerHTML = `<span class="text-[var(--ink-warning)]">○ NO KEY SAVED // PASTE TORBOX KEY OR HARDCODE IN SCRIPT</span>`;
+        }
+      }
+    }
 
     function saveApiKey() {
-      apiKey = apiKeyInput.value.trim();
-      localStorage.setItem("stuvio_tb_key", apiKey);
-      playPaperFeed();
-      if (apiKey) {
+      const newKey = apiKeyInput.value.trim();
+      if (newKey) {
+        apiKey = newKey;
+        localStorage.setItem("stuvio_tb_key", apiKey);
+        playPaperFeed();
+        updateApiKeyStatusUI();
         alert("TOKEN STORED // TORBOX REGISTER LINKED.");
+      } else {
+        resetToDefaultKey();
+      }
+    }
+
+    function resetToDefaultKey() {
+      localStorage.removeItem("stuvio_tb_key");
+      apiKey = DEFAULT_CONFIG.TORBOX_API_KEY || "";
+      playPaperTick();
+      updateApiKeyStatusUI();
+      alert("RESET COMPLETED // REVERTED TO HARDCODED DEFAULT KEY.");
+    }
+
+    function toggleApiKeyVisibility() {
+      playPaperTick();
+      const btn = document.getElementById("toggleKeyVisBtn");
+      if (apiKeyInput.type === "password") {
+        apiKeyInput.type = "text";
+        if (btn) btn.innerText = "🔒";
+      } else {
+        apiKeyInput.type = "password";
+        if (btn) btn.innerText = "👁";
       }
     }
 
@@ -1273,7 +1620,9 @@
       playerSection.classList.remove("flex");
     }
 
-    // Initialize with Movie Inventory
+    // Initialize with Movie Inventory, Key Status & Security Lock State
+    updateApiKeyStatusUI();
+    checkInitialLockState();
     loadCatalog("movies");
   </script>
 </body>
