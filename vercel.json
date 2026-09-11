@@ -1,8 +1,8 @@
 {
   "version": 2,
   "rewrites": [
-    { "source": "/catalog", "destination": "/server.js?__route=catalog" },
-    { "source": "/search-torrents", "destination": "/server.js?__route=search-torrents" },
+    { "source": "/catalog(.*)", "destination": "/server.js?__route=catalog&$1" },
+    { "source": "/search-torrents(.*)", "destination": "/server.js?__route=search-torrents&$1" },
     { "source": "/api/:path*", "destination": "/server.js?__route=api&__path=:path*" },
     { "source": "/(.*)", "destination": "/server.js" }
   ]

@@ -5,17 +5,21 @@ const path = require("path");
 
 const PORT = process.env.PORT || 3000;
 
-// Fetch helper using global fetch (Node 18+) with fallback to https/http
-async function fetchJson(url, maxRedirects = 3) {
+// Fetch helper using global fetch (Node 18+) with timeout and fallback to https/http
+async function fetchJson(url, timeoutMs = 6000, maxRedirects = 3) {
   try {
     if (typeof fetch === "function") {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
       const response = await fetch(url, {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
           "Accept": "application/json, text/plain, */*"
         },
+        signal: controller.signal,
         redirect: "follow"
       });
+      clearTimeout(timer);
       if (!response.ok) {
         console.error(`Fetch HTTP ${response.status} for: ${url}`);
         return null;
@@ -23,7 +27,7 @@ async function fetchJson(url, maxRedirects = 3) {
       return await response.json();
     }
   } catch (err) {
-    console.error(`Global fetch error for ${url}:`, err.message);
+    console.error(`Fetch error for ${url}:`, err.message);
   }
 
   // Fallback to legacy http/https client if fetch unavailable
@@ -45,7 +49,7 @@ async function fetchJson(url, maxRedirects = 3) {
     client.get(options, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         const nextUrl = new URL(res.headers.location, url).toString();
-        return resolve(fetchJson(nextUrl, maxRedirects - 1));
+        return resolve(fetchJson(nextUrl, timeoutMs, maxRedirects - 1));
       }
 
       if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -89,6 +93,9 @@ function buildSearchQueries(raw) {
   }
 
   const words = raw.replace(/[:\-–—_/\\!?.'"()[\]~*+@#$&]/g, " ").trim().split(/\s+/).filter(Boolean);
+  if (words.length > 2) {
+    add(words.slice(0, 2).join(" "));
+  }
   if (words.length > 3) {
     add(words.slice(0, 3).join(" "));
   }
@@ -110,7 +117,7 @@ async function searchApibayWithFallbacks(queryCandidates, limit) {
 
   for (const q of queryCandidates) {
     const searchUrl = `https://apibay.org/q.php?q=${encodeURIComponent(q)}`;
-    const items = await fetchJson(searchUrl);
+    const items = await fetchJson(searchUrl, 6000);
 
     if (Array.isArray(items)) {
       const validItems = items.filter(item =>
@@ -136,34 +143,42 @@ async function searchApibayWithFallbacks(queryCandidates, limit) {
   return results;
 }
 
-// Helper: Resolve Cinemeta metadata with query fallbacks
+// Helper: Resolve Cinemeta metadata with query fallbacks (fast timeout to never block torrent search)
 async function resolveMediaMeta(queryCandidates) {
-  for (const q of queryCandidates) {
-    const [movieMeta, seriesMeta] = await Promise.all([
-      fetchJson(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(q)}.json`),
-      fetchJson(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(q)}.json`)
-    ]);
+  try {
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 2500));
+    const searchPromise = (async () => {
+      for (const q of queryCandidates.slice(0, 2)) {
+        const [movieMeta, seriesMeta] = await Promise.all([
+          fetchJson(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(q)}.json`, 3000),
+          fetchJson(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(q)}.json`, 3000)
+        ]);
 
-    const candidates = [];
-    if (movieMeta && movieMeta.metas) candidates.push(...movieMeta.metas);
-    if (seriesMeta && seriesMeta.metas) candidates.push(...seriesMeta.metas);
+        const candidates = [];
+        if (movieMeta && movieMeta.metas) candidates.push(...movieMeta.metas);
+        if (seriesMeta && seriesMeta.metas) candidates.push(...seriesMeta.metas);
 
-    if (candidates.length > 0) {
-      const official = candidates.find(m =>
-        m.name &&
-        !m.name.toLowerCase().includes("reaction") &&
-        !m.name.toLowerCase().includes("review") &&
-        !m.name.includes("#DUPE#")
-      );
-      return official || candidates[0];
-    }
+        if (candidates.length > 0) {
+          const official = candidates.find(m =>
+            m.name &&
+            !m.name.toLowerCase().includes("reaction") &&
+            !m.name.toLowerCase().includes("review") &&
+            !m.name.includes("#DUPE#")
+          );
+          return official || candidates[0];
+        }
+      }
+      return null;
+    })();
+
+    return await Promise.race([searchPromise, timeoutPromise]);
+  } catch (e) {
+    return null;
   }
-  return null;
 }
 
 // Helper: Locate static files across common deployment directories
 function findStaticFile(filename) {
-  // Prevent serving server source code
   if (filename === "server.js" || filename === "server") return null;
 
   const candidates = [
@@ -198,17 +213,18 @@ async function handler(req, res) {
                      (req.headers["x-matched-path"] ? req.headers["x-matched-path"] + (req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "") : req.url);
 
   const urlParams = new URL(effectiveUrl, `http://${req.headers.host || "localhost"}`);
+  const reqUrlObj = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   let pathname = urlParams.pathname;
 
   // If Vercel rewrote pathname to /server.js, inspect query parameter or x-matched-path
   if (pathname === "/server.js" || pathname === "/server") {
-    const route = urlParams.searchParams.get("__route");
+    const route = urlParams.searchParams.get("__route") || reqUrlObj.searchParams.get("__route");
     if (route === "catalog") {
       pathname = "/catalog";
     } else if (route === "search-torrents") {
       pathname = "/search-torrents";
     } else if (route === "api") {
-      const sub = urlParams.searchParams.get("__path") || "";
+      const sub = urlParams.searchParams.get("__path") || reqUrlObj.searchParams.get("__path") || "";
       pathname = "/api/" + sub.replace(/^\/+/, "");
     } else if (req.headers["x-matched-path"] && req.headers["x-matched-path"] !== "/server.js") {
       pathname = req.headers["x-matched-path"];
@@ -223,6 +239,7 @@ async function handler(req, res) {
     res.end(JSON.stringify({
       status: "ok",
       effectiveUrl,
+      rawUrl: req.url,
       pathname,
       nodeVersion: process.version
     }));
@@ -231,13 +248,13 @@ async function handler(req, res) {
 
   // 1. Recommendation Feed Catalog (/catalog?type=movies|series|anime)
   if (pathname === "/catalog" || pathname.startsWith("/catalog")) {
-    const type = urlParams.searchParams.get("type") || "movies";
+    const type = urlParams.searchParams.get("type") || reqUrlObj.searchParams.get("type") || "movies";
 
     try {
       let items = [];
 
       if (type === "anime") {
-        const animeData = await fetchJson("https://v3-cinemeta.strem.io/catalog/series/top/genre=Anime.json");
+        const animeData = await fetchJson("https://v3-cinemeta.strem.io/catalog/series/top/genre=Anime.json", 5000);
         if (animeData && animeData.metas) {
           items = animeData.metas.slice(0, 24).map(m => ({
             id: m.id,
@@ -250,7 +267,7 @@ async function handler(req, res) {
         }
       } else {
         const cinemetaType = type === "series" ? "series" : "movie";
-        const metaData = await fetchJson(`https://v3-cinemeta.strem.io/catalog/${cinemetaType}/top.json`);
+        const metaData = await fetchJson(`https://v3-cinemeta.strem.io/catalog/${cinemetaType}/top.json`, 5000);
         if (metaData && metaData.metas) {
           items = metaData.metas.slice(0, 24).map(m => ({
             id: m.id,
@@ -274,12 +291,34 @@ async function handler(req, res) {
 
   // 2. Keyword Torrent Search Endpoint (/search-torrents?q=...&limit=...)
   if (pathname === "/search-torrents" || pathname.startsWith("/search-torrents")) {
-    const query = urlParams.searchParams.get("q");
-    const limit = Math.min(parseInt(urlParams.searchParams.get("limit") || "25", 10), 100);
+    // Extract query parameter from all possible parsed locations
+    const query = urlParams.searchParams.get("q") || 
+                  reqUrlObj.searchParams.get("q") ||
+                  (req.headers["x-forwarded-uri"] ? new URL(req.headers["x-forwarded-uri"], "http://localhost").searchParams.get("q") : null) ||
+                  urlParams.searchParams.get("query") ||
+                  reqUrlObj.searchParams.get("query");
+
+    const limit = Math.min(
+      parseInt(
+        urlParams.searchParams.get("limit") || 
+        reqUrlObj.searchParams.get("limit") || 
+        "25", 
+        10
+      ), 
+      100
+    );
 
     if (!query) {
       res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Missing query parameter 'q'" }));
+      res.end(JSON.stringify({ 
+        error: "Missing query parameter 'q'", 
+        rawUrl: req.url, 
+        effectiveUrl,
+        headers: {
+          "x-forwarded-uri": req.headers["x-forwarded-uri"],
+          "x-matched-path": req.headers["x-matched-path"]
+        }
+      }));
       return;
     }
 
@@ -328,15 +367,19 @@ async function handler(req, res) {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(formatted));
     } catch (err) {
+      console.error("Search torrents handler error:", err);
       res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Failed to search torrents" }));
+      res.end(JSON.stringify({ error: "Failed to search torrents: " + err.message }));
     }
     return;
   }
 
   // 3. TorBox API Forwarding (/api/...)
   if (pathname.startsWith("/api/")) {
-    const forwardParams = new URLSearchParams(urlParams.search);
+    const forwardParams = new URLSearchParams(reqUrlObj.search);
+    for (const [k, v] of urlParams.searchParams.entries()) {
+      forwardParams.set(k, v);
+    }
     forwardParams.delete("__route");
     forwardParams.delete("__path");
     const qs = forwardParams.toString() ? `?${forwardParams.toString()}` : "";

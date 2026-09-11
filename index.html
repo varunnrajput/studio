@@ -1257,6 +1257,22 @@
         const res = await fetch(`/search-torrents?q=${encodeURIComponent(q)}&limit=${limitSelect.value}`);
         searchTorrentList = await res.json();
 
+        if (!Array.isArray(searchTorrentList)) {
+          console.error("Search error returned:", searchTorrentList);
+          searchResults.innerHTML = `
+            <div class="col-span-2 flex flex-col items-center justify-center py-12 gap-3 text-center">
+              <span class="font-dot text-2xl text-[var(--ink-danger)]">SEARCH PIPELINE ERROR</span>
+              <p class="text-xs text-[var(--ink-dim)] max-w-md font-receipt">
+                ${searchTorrentList?.error || "Unable to retrieve torrent index data."}
+              </p>
+              <button onclick="document.getElementById('searchForm').dispatchEvent(new Event('submit'))" class="receipt-btn px-4 py-1.5 rounded text-xs font-bold mt-2">
+                [ ⟳ RETRY SEARCH ]
+              </button>
+            </div>
+          `;
+          return;
+        }
+
         // If target has no poster, adopt from first matched result
         if (!activeTargetMedia?.poster && searchTorrentList.length) {
           const firstWithPoster = searchTorrentList.find(t => t.poster);
