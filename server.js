@@ -171,6 +171,7 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50) {
 
     allTorrents.push({
       name: item.name,
+      info_hash: item.info_hash || null,
       size: parseInt(item.size, 10) || 0,
       seeders: parseInt(item.seeders, 10) || 0,
       leechers: parseInt(item.leechers, 10) || 0,

@@ -6,6 +6,7 @@
   <title>STUVIO // THERMAL RECEIPT REGISTER</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=VT323&display=swap" rel="stylesheet">
@@ -417,7 +418,15 @@
             </p>
           </div>
 
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <button 
+              id="copyStreamBtn"
+              onclick="copyCurrentStreamUrl()" 
+              class="receipt-btn px-2.5 py-1 rounded text-xs tracking-wider text-[var(--ink-accent)] border-[var(--ink-accent)]/30 hover:border-[var(--ink-accent)]"
+              title="Copy direct CDN stream URL for VLC or MPV"
+            >
+              📋 COPY VLC LINK
+            </button>
             <a 
               id="externalPlayBtn" 
               href="#" 
@@ -431,8 +440,54 @@
               onclick="playPaperTick(); closePlayer()" 
               class="receipt-btn px-2.5 py-1 rounded text-xs text-[var(--ink-danger)] border-[var(--ink-danger)]/40 hover:bg-[var(--ink-danger)]/10 tracking-wider"
             >
-              [✕ VOID TICKET]
+              [✕ VOID]
             </button>
+          </div>
+        </div>
+
+        <!-- TorBox Swarm Ingestion Notice (Shown when torrent is downloading to TorBox) -->
+        <div id="ingestionNotice" class="hidden flex-col gap-2 p-3 rounded bg-[var(--paper-sub)] border border-dashed border-[var(--ink-accent)] text-xs font-mono">
+          <div class="flex items-center justify-between text-[var(--ink-accent)] font-bold">
+            <span class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-[var(--ink-accent)] animate-ping"></span>
+              <span>TORBOX SWARM INGESTION IN PROGRESS</span>
+            </span>
+            <span id="ingestionSpeed" class="text-[var(--ink-success)] font-bold font-mono">0.0 MB/s</span>
+          </div>
+          <div class="w-full bg-black/60 h-2 rounded-full overflow-hidden border border-[var(--paper-border-dashed)]">
+            <div id="ingestionProgressBar" class="bg-[var(--ink-accent)] h-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+          <div class="flex items-center justify-between text-[10px] text-[var(--ink-dim)] font-receipt">
+            <span id="ingestionStatusText">DOWNLOADING TO TORBOX CLOUD CACHE...</span>
+            <span id="ingestionPercent" class="font-bold text-[var(--ink-primary)]">0%</span>
+          </div>
+          <p class="text-[10px] text-[var(--ink-faint)] italic font-receipt">
+            * This release is being fetched from the seed swarm into TorBox cloud storage. Video playback will begin automatically as soon as 100% cached!
+          </p>
+        </div>
+
+        <!-- Codec / Stall Diagnostic Banner (Shown when browser video stalls on MKV) -->
+        <div id="codecNotice" class="hidden flex-col gap-2.5 p-3 rounded bg-[var(--paper-sub)] border border-dashed border-[var(--ink-warning)] text-xs font-mono">
+          <div class="flex items-center justify-between text-[var(--ink-warning)] font-bold">
+            <span class="flex items-center gap-2">
+              <span>⚠️</span>
+              <span>BROWSER BUFFERING / CODEC NOTICE (10-BIT MKV / HEVC)</span>
+            </span>
+            <button onclick="dismissCodecNotice()" class="text-[var(--ink-dim)] hover:text-white">[✕]</button>
+          </div>
+          <p class="text-[11px] text-[var(--ink-dim)] font-receipt leading-relaxed">
+            Standard browsers (Chrome/Edge) struggle to decode 10-bit MKV (Hi10P/HEVC/Opus) releases directly in HTML5. If the video remains buffering, launch directly in VLC or MPV for smooth playback with full audio and stylized subtitles:
+          </p>
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <button onclick="copyCurrentStreamUrl()" class="receipt-btn-primary px-3 py-1 rounded text-xs font-bold">
+              📋 COPY STREAM LINK (FOR VLC: CTRL+N)
+            </button>
+            <a id="directVlcLink" href="#" class="receipt-btn px-3 py-1 rounded text-xs text-[var(--ink-accent)]">
+              ▶ OPEN IN VLC APP
+            </a>
+            <a id="directDownloadLink" href="#" target="_blank" download class="receipt-btn px-3 py-1 rounded text-xs text-[var(--ink-dim)]">
+              ⬇ DIRECT CDN FILE
+            </a>
           </div>
         </div>
 
@@ -1406,6 +1461,7 @@
               <div class="flex items-start gap-1.5 flex-wrap">
                 <span class="font-dot text-sm text-[var(--ink-dim)] shrink-0">[DOCKET #${String(idx + 1).padStart(2, '0')}]</span>
                 ${isTopSeed ? `<span class="px-1.5 py-0.2 rounded bg-[var(--ink-primary)] text-black font-bold font-mono text-[9px] tracking-wider uppercase">★ TOP SEEDED #1</span>` : ''}
+                <span id="cached-badge-${idx}"></span>
                 <h4 class="text-xs font-bold leading-snug line-clamp-2 text-[var(--ink-primary)] w-full mt-0.5" title="${t.name}">
                   ${t.name}
                 </h4>
@@ -1433,10 +1489,42 @@
         `;
         card.querySelector("button").onclick = () => {
           playPaperFeed();
-          addAndStream(t.magnet, t.name);
+          addAndStream(t.magnet, t.name, t.info_hash);
         };
         searchResults.appendChild(card);
       });
+
+      // Check instant TorBox cache status for search slips
+      checkCachedBadges(displayedTorrents);
+    }
+
+    async function checkCachedBadges(torrents) {
+      if (!apiKey || !torrents.length) return;
+      const hashes = torrents.map(t => {
+        if (t.info_hash) return t.info_hash;
+        const m = t.magnet?.match(/xt=urn:btih:([a-zA-Z0-9]+)/);
+        return m ? m[1] : null;
+      }).filter(Boolean);
+      if (!hashes.length) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/torrents/checkcached?hash=${hashes.slice(0, 30).join(",")}&format=object`, {
+          headers: { "Authorization": `Bearer ${apiKey}` }
+        });
+        const json = await res.json();
+        if (json.success && json.data) {
+          torrents.forEach((t, idx) => {
+            const h = (t.info_hash || "").toLowerCase();
+            const upperH = (t.info_hash || "").toUpperCase();
+            if (json.data[h] || json.data[upperH]) {
+              const badgeEl = document.getElementById(`cached-badge-${idx}`);
+              if (badgeEl) {
+                badgeEl.innerHTML = `<span class="px-1.5 py-0.2 rounded bg-[var(--ink-success)]/20 border border-[var(--ink-success)] text-[var(--ink-success)] font-bold text-[9px] font-mono tracking-wider">⚡ INSTANT CACHE</span>`;
+              }
+            }
+          });
+        }
+      } catch (e) {}
     }
 
     function quickSearch(q) {
@@ -1446,38 +1534,183 @@
     }
 
     // ==========================================
-    // 8. TorBox Cache Dispatch
+    // 8. TorBox Cache Dispatch & Swarm Ingestion
     // ==========================================
     const playerSection = document.getElementById("playerSection");
     const mediaTitle = document.getElementById("mediaTitle");
     const mediaSub = document.getElementById("mediaSub");
     const externalPlayBtn = document.getElementById("externalPlayBtn");
+    let currentStreamUrl = "";
+    let ingestionPollTimer = null;
+    let libraryRefreshTimer = null;
+    let stallTimer = null;
 
-    async function addAndStream(magnet, name) {
+    function dismissCodecNotice() {
+      const el = document.getElementById("codecNotice");
+      if (el) el.classList.add("hidden");
+    }
+
+    function updateExternalPlayerLinks(url, fileName) {
+      currentStreamUrl = url;
+      if (externalPlayBtn) {
+        externalPlayBtn.href = url;
+      }
+      const vlcProtoEl = document.getElementById("directVlcLink");
+      if (vlcProtoEl) {
+        vlcProtoEl.href = `vlc://${url}`;
+      }
+      const dlLink = document.getElementById("directDownloadLink");
+      if (dlLink) {
+        dlLink.href = url;
+        dlLink.setAttribute("download", fileName || "video.mkv");
+      }
+    }
+
+    function copyCurrentStreamUrl() {
+      playPaperTick();
+      if (!currentStreamUrl) {
+        alert("No active stream URL is loaded yet.");
+        return;
+      }
+      navigator.clipboard.writeText(currentStreamUrl).then(() => {
+        const btn = document.getElementById("copyStreamBtn");
+        if (btn) {
+          const orig = btn.innerText;
+          btn.innerText = "✅ COPIED!";
+          setTimeout(() => { btn.innerText = orig; }, 2500);
+        }
+        alert("DIRECT CDN STREAM LINK COPIED!\n\nTo play in VLC / MPV / IINA:\n1. Open VLC\n2. Press Ctrl + N (Media -> Open Network Stream)\n3. Paste the URL and click Play.");
+      }).catch(() => {
+        prompt("Copy direct debrid stream URL:", currentStreamUrl);
+      });
+    }
+
+    async function addAndStream(magnet, name, infoHash) {
       if (!apiKey) {
         alert("ERROR: AUTH TOKEN MISSING. ENTER TORBOX API KEY IN TOP SLIP.");
         return;
       }
 
+      if (ingestionPollTimer) {
+        clearInterval(ingestionPollTimer);
+        ingestionPollTimer = null;
+      }
+
       playerSection.classList.remove("hidden");
       playerSection.classList.add("flex");
       mediaTitle.innerText = name;
-      mediaSub.innerText = "DISPATCHING MAGNET STREAM TO TORBOX CLOUD CACHE...";
+      mediaSub.innerText = "DISPATCHING MAGNET TO TORBOX CLOUD CACHE...";
       window.scrollTo({ top: 0, behavior: "smooth" });
+
+      const ingestionNotice = document.getElementById("ingestionNotice");
+      const codecNotice = document.getElementById("codecNotice");
+      if (codecNotice) codecNotice.classList.add("hidden");
+
+      if (!infoHash && magnet) {
+        const m = magnet.match(/xt=urn:btih:([a-zA-Z0-9]+)/i);
+        if (m) infoHash = m[1];
+      }
 
       try {
         const formData = new FormData();
         formData.append("magnet", magnet);
 
-        await fetch(`${API_BASE}/torrents/createtorrent`, {
+        const createRes = await fetch(`${API_BASE}/torrents/createtorrent`, {
           method: "POST",
           headers: { "Authorization": `Bearer ${apiKey}` },
           body: formData
         });
 
-        setTimeout(async () => {
-          switchView("library");
-        }, 2200);
+        let targetTorrentId = null;
+        let targetHash = (infoHash || "").toLowerCase();
+        try {
+          const createJson = await createRes.json();
+          if (createJson && createJson.data) {
+            targetTorrentId = createJson.data.torrent_id;
+            if (createJson.data.hash) targetHash = createJson.data.hash.toLowerCase();
+          }
+        } catch (e) {}
+
+        mediaSub.innerText = "TORRENT SUBMITTED // CHECKING SWARM CACHE STATUS...";
+
+        // Real-time Ingestion Monitoring
+        let attempts = 0;
+        const checkState = async () => {
+          attempts++;
+          try {
+            const listRes = await fetch(`${API_BASE}/torrents/mylist?bypass_cache=true&token=${encodeURIComponent(apiKey)}`, {
+              headers: { "Authorization": `Bearer ${apiKey}` }
+            });
+            const listJson = await listRes.json();
+            if (!listJson.success || !Array.isArray(listJson.data)) return;
+
+            const found = listJson.data.find(t => 
+              (targetTorrentId && t.id === targetTorrentId) ||
+              (targetHash && (t.hash || "").toLowerCase() === targetHash) ||
+              (t.name && name && t.name.toLowerCase().includes(name.slice(0, 15).toLowerCase()))
+            );
+
+            if (found) {
+              const isCached = found.download_state === "cached" || 
+                               found.download_state === "completed" || 
+                               found.progress === 1 || 
+                               found.progress >= 100 || 
+                               found.download_finished === true;
+
+              if (isCached) {
+                // 100% CACHED! Launch video immediately!
+                if (ingestionPollTimer) {
+                  clearInterval(ingestionPollTimer);
+                  ingestionPollTimer = null;
+                }
+                if (ingestionNotice) ingestionNotice.classList.add("hidden");
+                mediaSub.innerText = "TORBOX CACHE VERIFIED (100%) // STARTING STREAM PIPELINE...";
+
+                const mediaExtensions = [".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v"];
+                let bestFile = null;
+                if (found.files && found.files.length) {
+                  const videoFiles = found.files.filter(f => mediaExtensions.some(ext => f.name.toLowerCase().endsWith(ext)));
+                  videoFiles.sort((a, b) => (b.size || 0) - (a.size || 0));
+                  bestFile = videoFiles[0];
+                }
+
+                if (bestFile) {
+                  playFile(found.id, bestFile.id, bestFile.name);
+                } else {
+                  switchView("library");
+                  fetchLibrary();
+                }
+                return;
+              } else {
+                // Ingesting from peer swarm into TorBox storage
+                if (ingestionNotice) {
+                  ingestionNotice.classList.remove("hidden");
+                  ingestionNotice.classList.add("flex");
+                  const pct = Math.min(99, Math.round((found.progress || 0) * 100));
+                  const speedMb = ((found.download_speed || 0) / (1024 * 1024)).toFixed(1);
+                  const eta = found.eta ? `${found.eta}s remaining` : "buffering peers...";
+                  
+                  document.getElementById("ingestionProgressBar").style.width = `${Math.max(4, pct)}%`;
+                  document.getElementById("ingestionPercent").innerText = `${pct}%`;
+                  document.getElementById("ingestionSpeed").innerText = `${speedMb} MB/s`;
+                  document.getElementById("ingestionStatusText").innerText = `INGESTING SWARM: ${pct}% (${eta})`;
+                  mediaSub.innerText = `DOWNLOADING TO TORBOX CLOUD [${pct}% @ ${speedMb} MB/s] // AUTO-PLAYING WHEN READY...`;
+                }
+              }
+            }
+          } catch (e) {}
+
+          if (attempts >= 180) { // 4.5 minutes maximum timeout
+            if (ingestionPollTimer) {
+              clearInterval(ingestionPollTimer);
+              ingestionPollTimer = null;
+            }
+            mediaSub.innerText = "INGESTION IN PROGRESS. CHECK ACCOUNT LEDGER.";
+          }
+        };
+
+        await checkState();
+        ingestionPollTimer = setInterval(checkState, 1500);
 
       } catch (err) {
         mediaSub.innerText = "ERROR TRANSMITTING STREAM ORDER.";
@@ -1498,12 +1731,14 @@
       }
 
       const libraryList = document.getElementById("libraryList");
-      libraryList.innerHTML = `
-        <div class="flex flex-col items-center justify-center py-16 gap-3 text-[var(--ink-dim)] font-dot text-lg">
-          <div class="w-6 h-6 border-2 border-[var(--ink-primary)] border-t-transparent rounded-full animate-spin"></div>
-          <span>PRINTING ACTIVE CLOUD ACCOUNT STATEMENT...</span>
-        </div>
-      `;
+      if (!libraryList.children.length || libraryList.innerText.includes("NO ACTIVE STREAM")) {
+        libraryList.innerHTML = `
+          <div class="flex flex-col items-center justify-center py-16 gap-3 text-[var(--ink-dim)] font-dot text-lg">
+            <div class="w-6 h-6 border-2 border-[var(--ink-primary)] border-t-transparent rounded-full animate-spin"></div>
+            <span>PRINTING ACTIVE CLOUD ACCOUNT STATEMENT...</span>
+          </div>
+        `;
+      }
 
       try {
         const res = await fetch(`${API_BASE}/torrents/mylist?bypass_cache=true&token=${encodeURIComponent(apiKey)}`, {
@@ -1531,20 +1766,50 @@
       const mediaExtensions = [".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v"];
       libraryList.innerHTML = "";
 
+      let hasActiveDownloading = false;
+
       torrents.forEach((t, i) => {
         const card = document.createElement("div");
         card.className = "receipt-card rounded p-3 text-xs flex flex-col gap-2";
 
+        const isCached = t.download_state === "cached" || 
+                         t.download_state === "completed" || 
+                         t.progress === 1 || 
+                         t.progress >= 100 || 
+                         t.download_finished === true;
+        const pct = Math.min(100, Math.round((t.progress || 0) * 100));
+        const speedMb = ((t.download_speed || 0) / (1024 * 1024)).toFixed(1);
+
+        if (!isCached) hasActiveDownloading = true;
+
         const header = document.createElement("div");
         header.className = "flex items-center justify-between gap-2 border-b border-dashed border-[var(--paper-border-dashed)] pb-1.5";
         header.innerHTML = `
-          <div class="font-bold text-[var(--ink-primary)] truncate flex items-center gap-2">
+          <div class="font-bold text-[var(--ink-primary)] truncate flex items-center gap-2 flex-1">
             <span class="font-dot text-sm text-[var(--ink-dim)]">[VOL-${String(i+1).padStart(2,'0')}]</span>
             <span class="truncate">${t.name}</span>
           </div>
-          <span class="text-[10px] text-[var(--ink-success)] shrink-0 font-mono font-bold">${(t.download_state || "CACHED").toUpperCase()}</span>
+          <div class="flex items-center gap-2 shrink-0">
+            ${isCached ? `
+              <span class="px-2 py-0.5 rounded bg-[var(--ink-success)]/20 border border-[var(--ink-success)] text-[var(--ink-success)] text-[9px] font-mono font-bold">
+                ✅ CACHED 100%
+              </span>
+            ` : `
+              <div class="flex items-center gap-1.5 font-mono text-[9px] text-[var(--ink-warning)]">
+                <span class="font-bold">⏳ DOWNLOADING ${pct}%</span>
+                ${speedMb > 0 ? `<span class="text-[var(--ink-dim)]">(${speedMb} MB/s)</span>` : ''}
+              </div>
+            `}
+          </div>
         `;
         card.appendChild(header);
+
+        if (!isCached) {
+          const progBar = document.createElement("div");
+          progBar.className = "w-full bg-black/50 h-1.5 rounded-full overflow-hidden border border-[var(--paper-border-dashed)]";
+          progBar.innerHTML = `<div class="bg-[var(--ink-warning)] h-full transition-all duration-300" style="width: ${Math.max(4, pct)}%"></div>`;
+          card.appendChild(progBar);
+        }
 
         const fileList = document.createElement("div");
         fileList.className = "flex flex-col gap-1 pl-2 border-l border-dashed border-[var(--paper-border-dashed)]";
@@ -1557,30 +1822,55 @@
             row.disabled = !isMedia;
             row.innerHTML = `
               <span class="truncate mr-3 flex items-center gap-1.5">
-                <span class="text-[9px]">${isMedia ? "▶" : "•"}</span>
+                <span class="text-[9px]">${isMedia ? (isCached ? "▶" : "⏳") : "•"}</span>
                 <span class="truncate">${f.name.split("/").pop()}</span>
               </span>
-              <span class="shrink-0 text-[10px] text-[var(--ink-dim)]">${(f.size / (1024 * 1024)).toFixed(0)} MB</span>
+              <div class="shrink-0 flex items-center gap-2">
+                ${!isCached ? `<span class="text-[9px] text-[var(--ink-warning)] font-bold">[${pct}%]</span>` : ''}
+                <span class="text-[10px] text-[var(--ink-dim)]">${(f.size / (1024 * 1024)).toFixed(0)} MB</span>
+              </div>
             `;
             if (isMedia) {
               row.onclick = () => {
                 playPaperFeed();
-                playFile(t.id, f.id, f.name);
+                if (!isCached) {
+                  addAndStream(t.magnet || "", t.name, t.hash);
+                } else {
+                  playFile(t.id, f.id, f.name);
+                }
               };
             }
             fileList.appendChild(row);
           });
         } else {
-          fileList.innerHTML = `<span class="text-[11px] text-[var(--ink-faint)] font-mono">STATUS: ${t.download_state || "PROCESSING"}</span>`;
+          fileList.innerHTML = `<span class="text-[11px] text-[var(--ink-faint)] font-mono">STATUS: ${(t.download_state || "PROCESSING").toUpperCase()} (${pct}%)</span>`;
         }
 
         card.appendChild(fileList);
         libraryList.appendChild(card);
       });
+
+      // Auto-poll ledger if any torrent is still downloading
+      if (hasActiveDownloading) {
+        if (!libraryRefreshTimer) {
+          libraryRefreshTimer = setInterval(() => {
+            const libTab = document.getElementById("viewLibrary");
+            if (libTab && !libTab.classList.contains("hidden")) {
+              fetchLibrary();
+            } else {
+              clearInterval(libraryRefreshTimer);
+              libraryRefreshTimer = null;
+            }
+          }, 2500);
+        }
+      } else if (libraryRefreshTimer) {
+        clearInterval(libraryRefreshTimer);
+        libraryRefreshTimer = null;
+      }
     }
 
     // ==========================================
-    // 10. Artplayer Launcher
+    // 10. Artplayer Launcher & Codec Stall Guard
     // ==========================================
     async function playFile(torrentId, fileId, fileName) {
       playerSection.classList.remove("hidden");
@@ -1588,6 +1878,16 @@
       mediaTitle.innerText = fileName.split("/").pop();
       mediaSub.innerText = "REQUESTING DIRECT CLOUD STREAMING PIPELINE...";
       window.scrollTo({ top: 0, behavior: "smooth" });
+
+      const codecNotice = document.getElementById("codecNotice");
+      if (codecNotice) codecNotice.classList.add("hidden");
+      const ingestionNotice = document.getElementById("ingestionNotice");
+      if (ingestionNotice) ingestionNotice.classList.add("hidden");
+
+      if (stallTimer) {
+        clearTimeout(stallTimer);
+        stallTimer = null;
+      }
 
       try {
         const res = await fetch(`${API_BASE}/torrents/requestdl?token=${encodeURIComponent(apiKey)}&torrent_id=${torrentId}&file_id=${fileId}&zip=false`, {
@@ -1600,28 +1900,79 @@
           return;
         }
 
-        const streamUrl = json.data;
-        externalPlayBtn.href = streamUrl;
+        currentStreamUrl = json.data;
+        updateExternalPlayerLinks(currentStreamUrl, fileName);
 
         if (art) art.destroy();
 
+        const isMkv = fileName.toLowerCase().endsWith(".mkv");
+
         art = new Artplayer({
           container: "#artplayer",
-          url: streamUrl,
-          type: fileName.endsWith(".mkv") ? "mkv" : "auto",
+          url: currentStreamUrl,
+          type: isMkv ? "mkv" : "auto",
           autoplay: true,
           playbackRate: true,
           aspectRatio: true,
           setting: true,
           pip: true,
           fullscreen: true,
-          theme: "#f1f4f9"
+          theme: "#f1f4f9",
+          customType: {
+            m3u8: function(video, url, art) {
+              if (window.Hls && Hls.isSupported()) {
+                if (art.hls) art.hls.destroy();
+                const hls = new Hls();
+                hls.loadSource(url);
+                hls.attachMedia(video);
+                art.hls = hls;
+              } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+                video.src = url;
+              }
+            }
+          }
         });
 
+        mediaSub.innerText = "VALIDATING CDN BUFFER & HARDWARE CODECS...";
+
+        let playbackConfirmed = false;
+
         art.on("video:loadedmetadata", () => {
+          mediaSub.innerText = "METADATA READ // DECODING VIDEO STREAM...";
+        });
+
+        art.on("video:playing", () => {
+          playbackConfirmed = true;
+          if (stallTimer) clearTimeout(stallTimer);
+          if (codecNotice) codecNotice.classList.add("hidden");
           mediaSub.innerText = "STREAMING DIRECT DEBRID CDN // TICKET VALIDATED";
         });
+
+        art.on("video:timeupdate", () => {
+          if (art.currentTime > 0.5 && !playbackConfirmed) {
+            playbackConfirmed = true;
+            if (stallTimer) clearTimeout(stallTimer);
+            if (codecNotice) codecNotice.classList.add("hidden");
+            mediaSub.innerText = "STREAMING DIRECT DEBRID CDN // PLAYBACK ACTIVE";
+          }
+        });
+
+        // Buffer / Stall Detector (If browser HTML5 video hangs on 10-bit MKV/HEVC)
+        stallTimer = setTimeout(() => {
+          if (!playbackConfirmed) {
+            if (codecNotice) {
+              codecNotice.classList.remove("hidden");
+              codecNotice.classList.add("flex");
+            }
+            mediaSub.innerText = "⚠️ BROWSER BUFFERING (10-BIT/MKV CODEC LIMIT). CLICK 'LAUNCH VLC ↗'.";
+          }
+        }, 4500);
+
         art.on("error", () => {
+          if (codecNotice) {
+            codecNotice.classList.remove("hidden");
+            codecNotice.classList.add("flex");
+          }
           mediaSub.innerText = "CODEC UNSUPPORTED IN BROWSER. CLICK 'LAUNCH VLC ↗'.";
         });
 
@@ -1632,6 +1983,19 @@
 
     function closePlayer() {
       if (art) art.destroy();
+      if (stallTimer) {
+        clearTimeout(stallTimer);
+        stallTimer = null;
+      }
+      if (ingestionPollTimer) {
+        clearInterval(ingestionPollTimer);
+        ingestionPollTimer = null;
+      }
+      const codecNotice = document.getElementById("codecNotice");
+      if (codecNotice) codecNotice.classList.add("hidden");
+      const ingestionNotice = document.getElementById("ingestionNotice");
+      if (ingestionNotice) ingestionNotice.classList.add("hidden");
+
       playerSection.classList.add("hidden");
       playerSection.classList.remove("flex");
     }
