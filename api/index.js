@@ -268,12 +268,13 @@ async function handler(req, res) {
 
   // 3. TorBox API Forwarding (/api/torrents/... or rewrites)
   const isTorbox = endpoint === "torbox" || 
+                   pathname === "/api/torrents" ||
                    pathname.startsWith("/api/torrents") || 
                    pathname.startsWith("/torrents") || 
                    (pathname.startsWith("/api/") && !pathname.startsWith("/api/catalog") && !pathname.startsWith("/api/search-torrents"));
 
   if (isTorbox) {
-    let subPath = urlParams.searchParams.get("path") || pathname;
+    let subPath = urlParams.searchParams.get("path") || req.headers["x-matched-path"] || pathname;
     if (!subPath.startsWith("/api/")) {
       subPath = "/api/" + subPath.replace(/^\/+/, "");
     }
