@@ -474,26 +474,26 @@
           </p>
         </div>
 
-        <!-- Codec / Stall Diagnostic Banner (Shown when browser video stalls on MKV) -->
+        <!-- Stream Optimization & External Player Banner -->
         <div id="codecNotice" class="hidden flex-col gap-2.5 p-3 rounded bg-[var(--paper-sub)] border border-dashed border-[var(--ink-warning)] text-xs font-mono">
           <div class="flex items-center justify-between text-[var(--ink-warning)] font-bold">
             <span class="flex items-center gap-2">
-              <span>⚠️</span>
-              <span>BROWSER BUFFERING / CODEC NOTICE (10-BIT MKV / HEVC)</span>
+              <span>⚡</span>
+              <span>PLAY IN STREMIO / VLC FOR 0% BUFFERING & FULL CODEC SUPPORT</span>
             </span>
-            <button onclick="dismissCodecNotice()" class="text-[var(--ink-dim)] hover:text-white">[✕]</button>
+            <button onclick="dismissCodecNotice()" class="text-[var(--ink-dim)] hover:text-white">[✕ DISMISS]</button>
           </div>
           <p class="text-[11px] text-[var(--ink-dim)] font-receipt leading-relaxed">
-            Standard browsers (Chrome/Edge) struggle to decode 10-bit MKV (Hi10P/HEVC/Opus) releases directly in HTML5. If the video remains buffering, launch directly in VLC or MPV for smooth playback with full audio and stylized subtitles:
+            Standard browsers (Chrome/Edge) have strict licensing restrictions for multi-channel AC3/DTS audio and 10-bit MKVs. Launching directly in VLC or Stremio bypasses browser restrictions for instant hardware-accelerated playback with zero buffering:
           </p>
           <div class="flex flex-wrap items-center gap-2 pt-1">
-            <button onclick="copyCurrentStreamUrl()" class="receipt-btn-primary px-3 py-1 rounded text-xs font-bold">
-              📋 COPY STREAM LINK (FOR VLC: CTRL+N)
-            </button>
-            <a id="directVlcLink" href="#" class="receipt-btn px-3 py-1 rounded text-xs text-[var(--ink-accent)]">
-              ▶ OPEN IN VLC APP
+            <a id="directVlcLink" href="#" class="receipt-btn-primary px-3 py-1.5 rounded text-xs font-bold text-black flex items-center gap-1">
+              <span>▶ OPEN IN VLC APP</span>
             </a>
-            <a id="directDownloadLink" href="#" target="_blank" download class="receipt-btn px-3 py-1 rounded text-xs text-[var(--ink-dim)]">
+            <button onclick="copyCurrentStreamUrl()" class="receipt-btn px-3 py-1.5 rounded text-xs font-bold text-[var(--ink-accent)] flex items-center gap-1">
+              <span>📋 COPY LINK (FOR STREMIO: PASTE IN SEARCH BAR)</span>
+            </button>
+            <a id="directDownloadLink" href="#" target="_blank" download class="receipt-btn px-3 py-1.5 rounded text-xs text-[var(--ink-dim)]">
               ⬇ DIRECT CDN FILE
             </a>
           </div>
@@ -2074,7 +2074,7 @@
           btn.innerText = "✅ COPIED!";
           setTimeout(() => { btn.innerText = orig; }, 2500);
         }
-        alert("DIRECT CDN STREAM LINK COPIED!\n\nTo play in VLC / MPV / IINA:\n1. Open VLC\n2. Press Ctrl + N (Media -> Open Network Stream)\n3. Paste the URL and click Play.");
+        alert("DIRECT DEBRID STREAM LINK COPIED!\n\nTo play with zero buffering:\n1. Open Stremio -> Paste link into top search bar -> Press Enter\nOR\n2. Open VLC -> Press Ctrl + N (Open Network Stream) -> Paste & Play!");
       }).catch(() => {
         prompt("Copy direct debrid stream URL:", currentStreamUrl);
       });
@@ -2395,28 +2395,44 @@
       }
 
       try {
-        const res = await fetch(`${API_BASE}/torrents/requestdl?token=${encodeURIComponent(apiKey)}&torrent_id=${torrentId}&file_id=${fileId}&zip=false`, {
-          headers: { "Authorization": `Bearer ${apiKey}` }
-        });
-        const json = await res.json();
+        let resolvedUrl = "";
+        try {
+          const streamRes = await fetch(`${API_BASE}/stream/createstream?id=${torrentId}&file_id=${fileId}&type=torrent`, {
+            headers: { "Authorization": `Bearer ${apiKey}` }
+          });
+          const streamJson = await streamRes.json();
+          if (streamJson && streamJson.success && streamJson.data) {
+            resolvedUrl = streamJson.data.url || streamJson.data.stream_url || streamJson.data.m3u8 || "";
+          }
+        } catch (e) {}
 
-        if (!json.success || !json.data) {
-          mediaSub.innerText = `STREAM FAILURE: ${json.detail || "UNABLE TO RESOLVE"}`;
-          return;
+        if (!resolvedUrl) {
+          const res = await fetch(`${API_BASE}/torrents/requestdl?token=${encodeURIComponent(apiKey)}&torrent_id=${torrentId}&file_id=${fileId}&zip=false`, {
+            headers: { "Authorization": `Bearer ${apiKey}` }
+          });
+          const json = await res.json();
+          if (!json.success || !json.data) {
+            mediaSub.innerText = `STREAM FAILURE: ${json.detail || "UNABLE TO RESOLVE"}`;
+            return;
+          }
+          resolvedUrl = json.data;
         }
 
-        currentStreamUrl = json.data;
+        currentStreamUrl = resolvedUrl;
         updateExternalPlayerLinks(currentStreamUrl, fileName);
 
         if (art) art.destroy();
 
-        const isMkv = fileName.toLowerCase().endsWith(".mkv");
+        const isM3u8 = currentStreamUrl.includes(".m3u8");
 
         art = new Artplayer({
           container: "#artplayer",
           url: currentStreamUrl,
-          type: isMkv ? "mkv" : "auto",
+          type: isM3u8 ? "m3u8" : "auto",
           autoplay: true,
+          preload: "auto",
+          playsinline: true,
+          autoOrientation: true,
           playbackRate: true,
           aspectRatio: true,
           setting: true,
@@ -2464,9 +2480,19 @@
         currentImdbId = imdbId || activeTargetMedia?.imdb || null;
         discoverSubtitles(torrentId, fileName, currentImdbId);
 
-        mediaSub.innerText = "VALIDATING CDN BUFFER & HARDWARE CODECS...";
+        mediaSub.innerText = "BUFFERING DEBRID STREAM FROM TORBOX CDN...";
 
         let playbackConfirmed = false;
+
+        art.on("video:waiting", () => {
+          if (!playbackConfirmed) {
+            mediaSub.innerText = "BUFFERING STREAM CHUNKS FROM TORBOX DEBRID CDN...";
+          }
+        });
+
+        art.on("video:canplay", () => {
+          mediaSub.innerText = "STREAM DATA BUFFERED // COMMENCING PLAYBACK...";
+        });
 
         art.on("video:loadedmetadata", () => {
           mediaSub.innerText = "METADATA READ // DECODING VIDEO STREAM...";
@@ -2476,7 +2502,7 @@
           playbackConfirmed = true;
           if (stallTimer) clearTimeout(stallTimer);
           if (codecNotice) codecNotice.classList.add("hidden");
-          mediaSub.innerText = "STREAMING DIRECT DEBRID CDN // TICKET VALIDATED";
+          mediaSub.innerText = "STREAMING DIRECT DEBRID CDN // PLAYBACK ACTIVE";
         });
 
         art.on("video:timeupdate", () => {
@@ -2488,23 +2514,23 @@
           }
         });
 
-        // Buffer / Stall Detector (If browser HTML5 video hangs on 10-bit MKV/HEVC)
+        // Generous 12-second buffer grace period before suggesting external playback
         stallTimer = setTimeout(() => {
           if (!playbackConfirmed) {
             if (codecNotice) {
               codecNotice.classList.remove("hidden");
               codecNotice.classList.add("flex");
             }
-            mediaSub.innerText = "⚠️ BROWSER BUFFERING (10-BIT/MKV CODEC LIMIT). CLICK 'LAUNCH VLC ↗'.";
+            mediaSub.innerText = "⚡ BROWSER BUFFERING SLOWLY. CLICK 'OPEN IN VLC' OR COPY FOR STREMIO.";
           }
-        }, 4500);
+        }, 12000);
 
         art.on("error", () => {
           if (codecNotice) {
             codecNotice.classList.remove("hidden");
             codecNotice.classList.add("flex");
           }
-          mediaSub.innerText = "CODEC UNSUPPORTED IN BROWSER. CLICK 'LAUNCH VLC ↗'.";
+          mediaSub.innerText = "BROWSER CODEC RESTRICTION (AC3/DTS/10-BIT). CLICK 'OPEN IN VLC' OR COPY FOR STREMIO.";
         });
 
       } catch (err) {
