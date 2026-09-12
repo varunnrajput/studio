@@ -420,6 +420,14 @@
 
           <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <button 
+              id="changeReleaseBtn"
+              onclick="playPaperTick(); if (activeTargetMedia) selectRecommendation(activeTargetMedia);" 
+              class="receipt-btn px-2.5 py-1 rounded text-xs tracking-wider text-[var(--ink-warning)] border-[var(--ink-warning)]/40 hover:border-[var(--ink-warning)]"
+              title="Browse alternative releases or video formats in Search Docket"
+            >
+              🔍 CHOOSE SLIP
+            </button>
+            <button 
               id="copyStreamBtn"
               onclick="copyCurrentStreamUrl()" 
               class="receipt-btn px-2.5 py-1 rounded text-xs tracking-wider text-[var(--ink-accent)] border-[var(--ink-accent)]/30 hover:border-[var(--ink-accent)]"
@@ -644,8 +652,8 @@
             <div class="flex items-center gap-2">
               <span class="text-[10px] uppercase text-[var(--ink-faint)]">SORT ORDER:</span>
               <select id="sortSelect" class="receipt-input rounded px-2.5 py-1 text-xs">
-                <option value="latest_topseed" selected>LATEST RELEASED (TOP SEED #1)</option>
-                <option value="seeds">MOST SEEDERS (▲ HIGH)</option>
+                <option value="seeds" selected>MOST SEEDERS (▲ HIGH)</option>
+                <option value="latest_topseed">LATEST RELEASED (TOP SEED #1)</option>
                 <option value="latest">LATEST ADDED (DATE ▼)</option>
                 <option value="peers">PEERS (▼ ACTIVE)</option>
                 <option value="size_desc">PAYLOAD SIZE (HIGH)</option>
@@ -1245,7 +1253,7 @@
         items.forEach((item, idx) => {
           const card = document.createElement("div");
           card.className = "receipt-card rounded p-2 flex flex-col justify-between gap-2 cursor-pointer";
-          card.onclick = () => { playPaperFeed(); selectRecommendation(item); };
+          card.onclick = () => { playPaperFeed(); autoPlayBestTorrent(item); };
 
           const posterUrl = item.poster || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80";
 
@@ -1270,10 +1278,21 @@
               </div>
             </div>
 
-            <button class="receipt-btn-primary w-full py-1 rounded text-[10px] tracking-wider uppercase font-bold active:scale-95">
-              ✂ TEAR & STREAM
-            </button>
+            <div class="flex flex-col gap-1 w-full pt-1">
+              <button class="btn-autoplay receipt-btn-primary w-full py-1.5 rounded text-[10px] tracking-wider uppercase font-bold active:scale-95 flex items-center justify-center gap-1">
+                <span>▶ PLAY BEST MP4</span>
+              </button>
+              <button class="btn-browse text-[9px] text-[var(--ink-dim)] hover:text-white underline text-center w-full py-0.5" title="Browse and select specific swarm release manually">
+                [ 🔍 BROWSE SLIPS ]
+              </button>
+            </div>
           `;
+
+          const autoPlayBtn = card.querySelector(".btn-autoplay");
+          const browseBtn = card.querySelector(".btn-browse");
+          if (autoPlayBtn) autoPlayBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); autoPlayBestTorrent(item); };
+          if (browseBtn) browseBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); selectRecommendation(item); };
+
           catalogGrid.appendChild(card);
         });
       } catch (err) {
@@ -1282,8 +1301,91 @@
     }
 
     // ==========================================
-    // 6. Target Selection & Search
+    // 6. Target Selection, Auto-Play & Search
     // ==========================================
+    async function autoPlayBestTorrent(item) {
+      playPaperFeed();
+      if (!apiKey) {
+        alert("AUTHENTICATION REQUIRED:\nPlease enter your TorBox API token in the cashier deposit line at the top before streaming.");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+
+      activeTargetMedia = (typeof item === "string") ? { title: item, poster: null } : item;
+
+      // 1. Reveal player area immediately & scroll up
+      playerSection.classList.remove("hidden");
+      playerSection.classList.add("flex");
+      mediaTitle.innerText = activeTargetMedia.title;
+      mediaSub.innerHTML = `
+        <span class="text-[var(--ink-accent)] font-bold animate-pulse">⚡ AUTO-PLAY ENGINE:</span>
+        <span class="text-[var(--ink-primary)] font-mono"> SCANNING SWARMS FOR TOP-SEEDED MP4 FOR "${activeTargetMedia.title}"...</span>
+      `;
+      window.scrollTo({ top: 0, behavior: "smooth" });
+
+      try {
+        // 2. Fetch top MP4 torrents (pre-sorted by seeds descending by server)
+        const res = await fetch(`/search-torrents?q=${encodeURIComponent(activeTargetMedia.title)}&format=mp4&limit=30`);
+        const results = await res.json();
+
+        let candidates = Array.isArray(results) ? results.filter(t => t.is_mp4 !== false && isClientMp4(t.name)) : [];
+
+        if (!candidates.length) {
+          mediaSub.innerHTML = `
+            <span class="text-[var(--ink-warning)] font-bold">NO DIRECT MP4 SWARMS FOUND</span>
+            <span class="text-[var(--ink-dim)]"> // SWITCHING TO SEARCH DOCKET TO VIEW ALL SLIPS...</span>
+          `;
+          setTimeout(() => { selectRecommendation(activeTargetMedia); }, 1400);
+          return;
+        }
+
+        // 3. Check for TorBox instant cloud cache among top candidates
+        let chosenTorrent = null;
+        const topHashes = candidates.slice(0, 15).map(t => t.info_hash).filter(Boolean);
+        if (topHashes.length) {
+          mediaSub.innerHTML = `
+            <span class="text-[var(--ink-accent)] font-bold">⚡ CHECKING TORBOX CLOUD CACHE</span>
+            <span class="text-[var(--ink-dim)]"> (${topHashes.length} CANDIDATES)...</span>
+          `;
+          try {
+            const cacheRes = await fetch(`${API_BASE}/torrents/checkcached?hash=${topHashes.join(",")}&format=object`, {
+              headers: { "Authorization": `Bearer ${apiKey}` }
+            });
+            const cacheJson = await cacheRes.json();
+            if (cacheJson.success && cacheJson.data) {
+              const cachedHit = candidates.find(t => {
+                const h = (t.info_hash || "").toLowerCase();
+                const u = (t.info_hash || "").toUpperCase();
+                return cacheJson.data[h] || cacheJson.data[u];
+              });
+              if (cachedHit) {
+                chosenTorrent = cachedHit;
+              }
+            }
+          } catch (e) {}
+        }
+
+        // 4. If no instant cache hit, pick candidate with highest seeds
+        if (!chosenTorrent) {
+          candidates.sort((a, b) => (b.seeders || 0) - (a.seeders || 0));
+          chosenTorrent = candidates[0];
+        }
+
+        // 5. Dispatch & stream
+        mediaSub.innerHTML = `
+          <span class="text-[var(--ink-success)] font-bold">⚡ AUTO-DISPATCHING TOP MP4:</span>
+          <span class="text-[var(--ink-primary)] truncate font-mono"> ${chosenTorrent.name} </span>
+          <span class="text-[var(--ink-accent)] font-mono font-bold">[▲ ${chosenTorrent.seeders.toLocaleString()} SEEDS]</span>
+        `;
+
+        addAndStream(chosenTorrent.magnet, chosenTorrent.name, chosenTorrent.info_hash, activeTargetMedia.id || chosenTorrent.imdb);
+
+      } catch (err) {
+        mediaSub.innerText = `AUTO-PLAY ERROR: ${err.message}. OPENING SEARCH VIEW...`;
+        setTimeout(() => { selectRecommendation(activeTargetMedia); }, 1400);
+      }
+    }
+
     function selectRecommendation(item) {
       if (typeof item === "string") {
         activeTargetMedia = { title: item, poster: null };
@@ -1420,6 +1522,7 @@
       const lower = name.toLowerCase();
       if (/\.mkv\b|\[mkv\]|\(mkv\)|\bmkv\b/i.test(lower)) return false;
       if (/10bit|10-bit|hi10p/i.test(lower)) return false;
+      if (/\b(hevc|h265|x265|h\.265)\b/i.test(lower)) return false;
       if (lower.includes("yts") || lower.includes("yify")) return true;
       if (/\.mp4\b|\[mp4\]|\(mp4\)|\bmp4\b|\.m4v\b/i.test(lower)) return true;
       if ((lower.includes("x264") || lower.includes("h264") || lower.includes("h.264")) &&
