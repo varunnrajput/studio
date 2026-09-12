@@ -420,6 +420,14 @@
 
           <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <button 
+              id="skipCandidateBtn"
+              onclick="playPaperTick(); skipToNextCandidate();" 
+              class="hidden receipt-btn px-2.5 py-1 rounded text-xs tracking-wider text-[var(--ink-accent)] border-[var(--ink-accent)]/40 hover:border-[var(--ink-accent)] animate-pulse"
+              title="Skip to next torrent candidate immediately"
+            >
+              ⏭ NEXT RELEASE
+            </button>
+            <button 
               id="changeReleaseBtn"
               onclick="playPaperTick(); if (activeTargetMedia) selectRecommendation(activeTargetMedia);" 
               class="receipt-btn px-2.5 py-1 rounded text-xs tracking-wider text-[var(--ink-warning)] border-[var(--ink-warning)]/40 hover:border-[var(--ink-warning)]"
@@ -1300,9 +1308,10 @@
       }
     }
 
-    // ==========================================
-    // 6. Target Selection, Auto-Play & Search
-    // ==========================================
+    let autoPlayQueue = [];
+    let autoPlayIndex = 0;
+    let isAutoPlayActive = false;
+
     async function autoPlayBestTorrent(item) {
       playPaperFeed();
       if (!apiKey) {
@@ -1312,6 +1321,7 @@
       }
 
       activeTargetMedia = (typeof item === "string") ? { title: item, poster: null } : item;
+      isAutoPlayActive = true;
 
       // 1. Reveal player area immediately & scroll up
       playerSection.classList.remove("hidden");
@@ -1319,7 +1329,7 @@
       mediaTitle.innerText = activeTargetMedia.title;
       mediaSub.innerHTML = `
         <span class="text-[var(--ink-accent)] font-bold animate-pulse">⚡ AUTO-PLAY ENGINE:</span>
-        <span class="text-[var(--ink-primary)] font-mono"> SCANNING SWARMS FOR TOP-SEEDED MP4 FOR "${activeTargetMedia.title}"...</span>
+        <span class="text-[var(--ink-primary)] font-mono"> SCANNING SWARMS FOR PLAYABLE CANDIDATES...</span>
       `;
       window.scrollTo({ top: 0, behavior: "smooth" });
 
@@ -1340,7 +1350,6 @@
         }
 
         // 3. Check for TorBox instant cloud cache among top candidates
-        let chosenTorrent = null;
         const topHashes = candidates.slice(0, 15).map(t => t.info_hash).filter(Boolean);
         if (topHashes.length) {
           mediaSub.innerHTML = `
@@ -1353,36 +1362,91 @@
             });
             const cacheJson = await cacheRes.json();
             if (cacheJson.success && cacheJson.data) {
-              const cachedHit = candidates.find(t => {
+              const cachedCandidates = [];
+              const uncachedCandidates = [];
+              candidates.forEach(t => {
                 const h = (t.info_hash || "").toLowerCase();
                 const u = (t.info_hash || "").toUpperCase();
-                return cacheJson.data[h] || cacheJson.data[u];
+                if (cacheJson.data[h] || cacheJson.data[u]) {
+                  t.is_cached = true;
+                  cachedCandidates.push(t);
+                } else {
+                  t.is_cached = false;
+                  uncachedCandidates.push(t);
+                }
               });
-              if (cachedHit) {
-                chosenTorrent = cachedHit;
-              }
+              cachedCandidates.sort((a, b) => (b.seeders || 0) - (a.seeders || 0));
+              uncachedCandidates.sort((a, b) => (b.seeders || 0) - (a.seeders || 0));
+              candidates = [...cachedCandidates, ...uncachedCandidates];
             }
           } catch (e) {}
-        }
-
-        // 4. If no instant cache hit, pick candidate with highest seeds
-        if (!chosenTorrent) {
+        } else {
           candidates.sort((a, b) => (b.seeders || 0) - (a.seeders || 0));
-          chosenTorrent = candidates[0];
         }
 
-        // 5. Dispatch & stream
-        mediaSub.innerHTML = `
-          <span class="text-[var(--ink-success)] font-bold">⚡ AUTO-DISPATCHING TOP MP4:</span>
-          <span class="text-[var(--ink-primary)] truncate font-mono"> ${chosenTorrent.name} </span>
-          <span class="text-[var(--ink-accent)] font-mono font-bold">[▲ ${chosenTorrent.seeders.toLocaleString()} SEEDS]</span>
-        `;
+        autoPlayQueue = candidates.slice(0, 10);
+        autoPlayIndex = 0;
 
-        addAndStream(chosenTorrent.magnet, chosenTorrent.name, chosenTorrent.info_hash, activeTargetMedia.id || chosenTorrent.imdb);
+        dispatchCandidate(0);
 
       } catch (err) {
         mediaSub.innerText = `AUTO-PLAY ERROR: ${err.message}. OPENING SEARCH VIEW...`;
         setTimeout(() => { selectRecommendation(activeTargetMedia); }, 1400);
+      }
+    }
+
+    async function dispatchCandidate(idx) {
+      if (!autoPlayQueue || idx >= autoPlayQueue.length) {
+        isAutoPlayActive = false;
+        mediaSub.innerHTML = `
+          <span class="text-[var(--ink-danger)] font-bold">ALL CANDIDATES EXHAUSTED IN BROWSER</span>
+          <span class="text-[var(--ink-dim)]"> // LAUNCH IN VLC OR STREMIO FOR 0% BUFFER...</span>
+        `;
+        const codecNotice = document.getElementById("codecNotice");
+        if (codecNotice) {
+          codecNotice.classList.remove("hidden");
+          codecNotice.classList.add("flex");
+        }
+        return;
+      }
+
+      autoPlayIndex = idx;
+      const t = autoPlayQueue[idx];
+      const total = autoPlayQueue.length;
+
+      const skipBtn = document.getElementById("skipCandidateBtn");
+      if (skipBtn) {
+        skipBtn.classList.remove("hidden");
+        skipBtn.innerText = `⏭ NEXT (${idx + 1}/${total})`;
+      }
+
+      mediaSub.innerHTML = `
+        <span class="text-[var(--ink-accent)] font-bold">[CANDIDATE ${idx + 1}/${total}]:</span>
+        <span class="text-[var(--ink-primary)] truncate font-mono"> ${t.name} </span>
+        <span class="text-[var(--ink-success)] font-mono font-bold">[▲ ${t.seeders.toLocaleString()} SEEDS]</span>
+        ${t.is_cached ? `<span class="text-[var(--ink-accent)] font-bold">[⚡ CACHED]</span>` : ''}
+      `;
+
+      addAndStream(t.magnet, t.name, t.info_hash, activeTargetMedia?.id || t.imdb);
+    }
+
+    function skipToNextCandidate() {
+      playPaperTick();
+      if (autoPlayQueue && autoPlayQueue.length > autoPlayIndex + 1) {
+        mediaSub.innerHTML = `
+          <span class="text-[var(--ink-warning)] font-bold">SKIPPING TO CANDIDATE ${autoPlayIndex + 2}/${autoPlayQueue.length}...</span>
+        `;
+        if (stallTimer) {
+          clearTimeout(stallTimer);
+          stallTimer = null;
+        }
+        if (ingestionPollTimer) {
+          clearInterval(ingestionPollTimer);
+          ingestionPollTimer = null;
+        }
+        dispatchCandidate(autoPlayIndex + 1);
+      } else {
+        alert("End of candidate queue. Click '🔍 CHOOSE SLIP' to browse all swarms manually.");
       }
     }
 
@@ -1683,7 +1747,10 @@
         `;
         card.querySelector("button").onclick = () => {
           playPaperFeed();
-          addAndStream(t.magnet, t.name, t.info_hash, t.imdb);
+          isAutoPlayActive = true;
+          autoPlayQueue = displayedTorrents.slice(idx);
+          autoPlayIndex = 0;
+          dispatchCandidate(0);
         };
         searchResults.appendChild(card);
       });
@@ -2198,6 +2265,22 @@
                   document.getElementById("ingestionSpeed").innerText = `${speedMb} MB/s`;
                   document.getElementById("ingestionStatusText").innerText = `INGESTING SWARM: ${pct}% (${eta})`;
                   mediaSub.innerText = `DOWNLOADING TO TORBOX CLOUD [${pct}% @ ${speedMb} MB/s] // AUTO-PLAYING WHEN READY...`;
+
+                  if (isAutoPlayActive && attempts >= 7 && (found.download_speed || 0) < 50000 && (found.progress || 0) < 0.05) {
+                    if (autoPlayQueue && autoPlayQueue.length > autoPlayIndex + 1) {
+                      if (ingestionPollTimer) {
+                        clearInterval(ingestionPollTimer);
+                        ingestionPollTimer = null;
+                      }
+                      if (ingestionNotice) ingestionNotice.classList.add("hidden");
+                      mediaSub.innerHTML = `
+                        <span class="text-[var(--ink-warning)] font-bold">SWARM UNCACHED OR SLOW</span>
+                        <span class="text-[var(--ink-accent)] animate-pulse"> // FAILING OVER TO CANDIDATE ${autoPlayIndex + 2}/${autoPlayQueue.length}...</span>
+                      `;
+                      setTimeout(() => { dispatchCandidate(autoPlayIndex + 1); }, 1000);
+                      return;
+                    }
+                  }
                 }
               }
             }
@@ -2216,6 +2299,11 @@
         ingestionPollTimer = setInterval(checkState, 1500);
 
       } catch (err) {
+        if (isAutoPlayActive && autoPlayQueue && autoPlayQueue.length > autoPlayIndex + 1) {
+          mediaSub.innerText = `SUBMIT FAILED // FAILING OVER TO CANDIDATE ${autoPlayIndex + 2}/${autoPlayQueue.length}...`;
+          setTimeout(() => { dispatchCandidate(autoPlayIndex + 1); }, 1000);
+          return;
+        }
         mediaSub.innerText = "ERROR TRANSMITTING STREAM ORDER.";
       }
     }
@@ -2514,23 +2602,43 @@
           }
         });
 
-        // Generous 12-second buffer grace period before suggesting external playback
+        // Buffer / Stall Detector: 12-second timeout triggers automatic failover to next candidate torrent!
         stallTimer = setTimeout(() => {
           if (!playbackConfirmed) {
-            if (codecNotice) {
-              codecNotice.classList.remove("hidden");
-              codecNotice.classList.add("flex");
+            if (isAutoPlayActive && autoPlayQueue && autoPlayQueue.length > autoPlayIndex + 1) {
+              mediaSub.innerHTML = `
+                <span class="text-[var(--ink-warning)] font-bold">⚠️ BUFFER TIMED OUT (12s) ON CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}</span>
+                <span class="text-[var(--ink-accent)] animate-pulse"> // FAILING OVER TO NEXT SWARM...</span>
+              `;
+              setTimeout(() => {
+                dispatchCandidate(autoPlayIndex + 1);
+              }, 1000);
+            } else {
+              if (codecNotice) {
+                codecNotice.classList.remove("hidden");
+                codecNotice.classList.add("flex");
+              }
+              mediaSub.innerText = "⚡ BROWSER BUFFERING SLOWLY. CLICK 'OPEN IN VLC' OR COPY FOR STREMIO.";
             }
-            mediaSub.innerText = "⚡ BROWSER BUFFERING SLOWLY. CLICK 'OPEN IN VLC' OR COPY FOR STREMIO.";
           }
         }, 12000);
 
         art.on("error", () => {
-          if (codecNotice) {
-            codecNotice.classList.remove("hidden");
-            codecNotice.classList.add("flex");
+          if (isAutoPlayActive && autoPlayQueue && autoPlayQueue.length > autoPlayIndex + 1) {
+            mediaSub.innerHTML = `
+              <span class="text-[var(--ink-danger)] font-bold">CODEC ERROR ON CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}</span>
+              <span class="text-[var(--ink-accent)] animate-pulse"> // FAILING OVER TO NEXT SWARM...</span>
+            `;
+            setTimeout(() => {
+              dispatchCandidate(autoPlayIndex + 1);
+            }, 1000);
+          } else {
+            if (codecNotice) {
+              codecNotice.classList.remove("hidden");
+              codecNotice.classList.add("flex");
+            }
+            mediaSub.innerText = "BROWSER CODEC RESTRICTION (AC3/DTS/10-BIT). CLICK 'OPEN IN VLC' OR COPY FOR STREMIO.";
           }
-          mediaSub.innerText = "BROWSER CODEC RESTRICTION (AC3/DTS/10-BIT). CLICK 'OPEN IN VLC' OR COPY FOR STREMIO.";
         });
 
       } catch (err) {
@@ -2552,6 +2660,12 @@
       if (codecNotice) codecNotice.classList.add("hidden");
       const ingestionNotice = document.getElementById("ingestionNotice");
       if (ingestionNotice) ingestionNotice.classList.add("hidden");
+
+      isAutoPlayActive = false;
+      autoPlayQueue = [];
+      autoPlayIndex = 0;
+      const skipBtn = document.getElementById("skipCandidateBtn");
+      if (skipBtn) skipBtn.classList.add("hidden");
 
       availableSubtitleTracks = [];
       activeSubtitleTrack = null;
