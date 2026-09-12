@@ -549,9 +549,26 @@
             </div>
           </div>
 
+          <!-- OpenSubtitles Cloud Search Slip -->
+          <div class="flex items-center gap-2 pt-1 border-t border-dashed border-[var(--paper-border-dashed)] flex-wrap sm:flex-nowrap">
+            <span class="text-[10px] text-[var(--ink-faint)] shrink-0 flex items-center gap-1">
+              <span>🌐 OPENSUBTITLES CLOUD:</span>
+            </span>
+            <input 
+              id="subSearchInput" 
+              type="text" 
+              placeholder="SEARCH OPENSUBTITLES (MOVIE / SERIES TITLE OR IMDB TT...)" 
+              class="receipt-input rounded px-2.5 py-1 text-xs text-[var(--ink-primary)] flex-1 min-w-0" 
+              onkeydown="if(event.key==='Enter'){event.preventDefault();searchSubtitlesManual();}"
+            />
+            <button onclick="searchSubtitlesManual()" class="receipt-btn px-3 py-1 rounded text-xs text-[var(--ink-accent)] font-bold shrink-0 hover:border-[var(--ink-accent)] active:scale-95">
+              [ ⟳ FETCH SUBS ]
+            </button>
+          </div>
+
           <div class="flex items-center justify-between text-[10px] text-[var(--ink-dim)] font-receipt">
             <span id="captionStatusText">ACTIVE: NONE (SELECT A TRACK OR LOAD LOCAL SUBTITLE)</span>
-            <span id="captionSourceBadge" class="font-mono text-[var(--ink-faint)]">UTF-8 WEBVTT ENGINE</span>
+            <span id="captionSourceBadge" class="font-mono text-[var(--ink-faint)]">OPENSUBTITLES + VTT</span>
           </div>
         </div>
       </section>
@@ -2028,20 +2045,26 @@
       try {
         const se = parseSeasonEpisode(fileName);
         let queryParams = "";
-        if (imdbId) queryParams += `imdb=${encodeURIComponent(imdbId)}&`;
+        const targetId = imdbId || activeImdbId || activeTargetMedia?.id || activeTargetMedia?.imdb;
+        if (targetId) queryParams += `imdb=${encodeURIComponent(targetId)}&`;
         if (se) queryParams += `season=${se.season}&episode=${se.episode}&`;
         const cleanTitle = fileName.split("/").pop().replace(/\.(mp4|mkv)$/i, "").replace(/[:\-–—_/\\!?.'"()[\]~*+@#$&]/g, " ").trim();
         queryParams += `q=${encodeURIComponent(cleanTitle)}`;
 
+        const subSearchInput = document.getElementById("subSearchInput");
+        if (subSearchInput && !subSearchInput.value) {
+          subSearchInput.value = targetId || activeTargetMedia?.title || cleanTitle;
+        }
+
         const subRes = await fetch(`/api/subtitles?${queryParams}`);
         const subData = await subRes.json();
-        if (subData.success && Array.isArray(subData.subtitles)) {
+        if (subData.success && Array.isArray(subData.subtitles) && subData.subtitles.length) {
           subData.subtitles.forEach((s, idx) => {
             const langCode = (s.lang || "eng").toLowerCase();
             const langName = LANG_NAMES[langCode] || langCode.toUpperCase();
             availableSubtitleTracks.push({
               id: `os-${s.id || idx}`,
-              label: `${langName} (OpenSubtitles - #${idx + 1})`,
+              label: `[${langCode.toUpperCase()}] ${langName} (OpenSubtitles #${idx + 1})`,
               lang: langName,
               langCode: langCode,
               url: s.url,
@@ -2071,8 +2094,79 @@
           loadSubtitleTrack(availableSubtitleTracks[0]);
         } else {
           subSelect.value = "none";
-          if (statusEl) statusEl.innerText = "NO CLOUD CAPTION TRACKS LOCATED. LOAD LOCAL FILE VIA [📁 LOAD .SRT/.VTT].";
+          if (statusEl) statusEl.innerText = "NO CLOUD CAPTION TRACKS LOCATED. SEARCH OPENSUBTITLES OR LOAD LOCAL .SRT.";
         }
+      }
+    }
+
+    async function searchSubtitlesManual() {
+      playPaperTick();
+      const input = document.getElementById("subSearchInput");
+      const q = input?.value.trim();
+      if (!q) {
+        alert("Please enter a movie title or IMDb ID (e.g. Inception or tt1375666).");
+        return;
+      }
+
+      const statusEl = document.getElementById("captionStatusText");
+      if (statusEl) statusEl.innerText = `QUERYING OPENSUBTITLES CLOUD FOR "${q}"...`;
+
+      let queryParams = "";
+      if (/^tt\d{5,10}$/i.test(q)) {
+        queryParams = `imdb=${encodeURIComponent(q.toLowerCase())}`;
+      } else {
+        queryParams = `q=${encodeURIComponent(q)}`;
+      }
+
+      try {
+        const subRes = await fetch(`/api/subtitles?${queryParams}`);
+        const subData = await subRes.json();
+        if (subData.success && Array.isArray(subData.subtitles) && subData.subtitles.length) {
+          // Preserve local file tracks and torrent internal tracks, replace OpenSubtitles tracks
+          const localTracks = availableSubtitleTracks.filter(s => s.source === "Local" || s.source === "Torrent");
+          availableSubtitleTracks = [...localTracks];
+
+          subData.subtitles.forEach((s, idx) => {
+            const langCode = (s.lang || "eng").toLowerCase();
+            const langName = LANG_NAMES[langCode] || langCode.toUpperCase();
+            availableSubtitleTracks.push({
+              id: `os-${s.id || idx}`,
+              label: `[${langCode.toUpperCase()}] ${langName} (OpenSubtitles #${idx + 1})`,
+              lang: langName,
+              langCode: langCode,
+              url: s.url,
+              type: "srt",
+              source: "OpenSubtitles"
+            });
+          });
+
+          // Rebuild select dropdown
+          const subSelect = document.getElementById("subtitleSelect");
+          if (subSelect) {
+            subSelect.innerHTML = '<option value="none">CAPTIONS: OFF</option>';
+            availableSubtitleTracks.forEach((st, idx) => {
+              const opt = document.createElement("option");
+              opt.value = idx;
+              opt.innerText = st.label;
+              subSelect.appendChild(opt);
+            });
+
+            // Auto-load English
+            const engIdx = availableSubtitleTracks.findIndex(s => s.langCode === "eng" || s.label.toLowerCase().includes("english"));
+            if (engIdx >= 0) {
+              subSelect.value = engIdx;
+              loadSubtitleTrack(availableSubtitleTracks[engIdx]);
+            } else {
+              subSelect.value = 0;
+              loadSubtitleTrack(availableSubtitleTracks[0]);
+            }
+          }
+          if (statusEl) statusEl.innerText = `POPULATED ${subData.subtitles.length} OPENSUBTITLES TRACKS FOR "${subData.imdb || q}"!`;
+        } else {
+          if (statusEl) statusEl.innerText = `ZERO OPENSUBTITLES TRACKS FOUND FOR "${q}". TRY ANOTHER TITLE OR IMDB ID.`;
+        }
+      } catch (err) {
+        if (statusEl) statusEl.innerText = `ERROR SEARCHING OPENSUBTITLES: ${err.message}`;
       }
     }
 
@@ -2215,7 +2309,7 @@
         return;
       }
 
-      activeImdbId = imdb || activeTargetMedia?.imdb || null;
+      activeImdbId = imdb || activeTargetMedia?.id || activeTargetMedia?.imdb || null;
       clearAllPlaybackMonitors();
 
       playerSection.classList.remove("hidden");
@@ -2668,7 +2762,7 @@
         });
 
         // Trigger Subtitle Auto-Discovery
-        currentImdbId = imdbId || activeTargetMedia?.imdb || null;
+        currentImdbId = imdbId || activeImdbId || activeTargetMedia?.id || activeTargetMedia?.imdb || null;
         discoverSubtitles(torrentId, fileName, currentImdbId);
 
         mediaSub.innerText = "BUFFERING DEBRID STREAM FROM TORBOX CDN...";
@@ -2812,6 +2906,8 @@
       activeSubtitleTrack = null;
       const subSelect = document.getElementById("subtitleSelect");
       if (subSelect) subSelect.innerHTML = '<option value="none">CAPTIONS: OFF</option>';
+      const subSearchInput = document.getElementById("subSearchInput");
+      if (subSearchInput) subSearchInput.value = "";
       const statusEl = document.getElementById("captionStatusText");
       if (statusEl) statusEl.innerText = "ACTIVE: NONE (SELECT A TRACK OR LOAD LOCAL SUBTITLE)";
 

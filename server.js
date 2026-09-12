@@ -140,20 +140,44 @@ function buildSearchQueries(raw, format = "mp4") {
   return queries;
 }
 
+// Helper: Extract clean title and 4-digit release year by removing scene/codec tags and TV episode tags
+function extractCleanTitleAndYear(raw) {
+  if (!raw || typeof raw !== "string") return { title: "", year: "" };
+  let s = raw.replace(/\.(mp4|mkv|avi|mov|webm|m4v)$/i, "");
+  s = s.replace(/[._]/g, " ");
+  // Strip S01E01 / 1x01 / Season 1 markers if present for series
+  s = s.replace(/\b[sS]\d{1,2}[eE]\d{1,2}\b.*/i, "");
+  s = s.replace(/\b\d{1,2}x\d{1,2}\b.*/i, "");
+  s = s.replace(/\bseason\s*\d+\b.*/i, "");
+  const yearMatch = s.match(/\b(19\d\d|20\d\d)\b/);
+  const year = yearMatch ? yearMatch[1] : "";
+  const sceneRegex = /\b(1080p|720p|480p|2160p|4k|uhd|bluray|blu-ray|bdrip|brrip|webrip|web-dl|webdl|hdrip|dvdrip|x264|h264|x265|hevc|h\.264|h\.265|aac|dts|ac3|yts|yify|rarbg|eztv|proper|repack|remux|hdr)\b/i;
+  const match = s.match(sceneRegex);
+  if (match) s = s.substring(0, match.index);
+  if (year) s = s.replace(new RegExp(`\\b${year}\\b`, "g"), "");
+  const title = s.replace(/[:\-–—/\\!?.'"()[\]~*+@#$&]/g, " ").replace(/\s+/g, " ").trim();
+  return { title, year };
+}
+
 // Helper: Resolve Cinemeta metadata with query fallbacks (fast timeout to never block torrent search)
-async function resolveMediaMeta(queryCandidates) {
+async function resolveMediaMeta(queryCandidates, preferSeries = false) {
   try {
-    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 2500));
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 3800));
     const searchPromise = (async () => {
-      for (const q of queryCandidates.slice(0, 2)) {
+      for (const q of queryCandidates.slice(0, 3)) {
         const [movieMeta, seriesMeta] = await Promise.all([
-          fetchJson(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(q)}.json`, 2500),
-          fetchJson(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(q)}.json`, 2500)
+          fetchJson(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(q)}.json`, 3500),
+          fetchJson(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(q)}.json`, 3500)
         ]);
 
         const candidates = [];
-        if (movieMeta && movieMeta.metas) candidates.push(...movieMeta.metas);
-        if (seriesMeta && seriesMeta.metas) candidates.push(...seriesMeta.metas);
+        if (preferSeries) {
+          if (seriesMeta && seriesMeta.metas) candidates.push(...seriesMeta.metas);
+          if (movieMeta && movieMeta.metas) candidates.push(...movieMeta.metas);
+        } else {
+          if (movieMeta && movieMeta.metas) candidates.push(...movieMeta.metas);
+          if (seriesMeta && seriesMeta.metas) candidates.push(...seriesMeta.metas);
+        }
 
         if (candidates.length > 0) {
           const official = candidates.find(m =>
@@ -560,7 +584,7 @@ async function handler(req, res) {
 
   // 3. Captions & Subtitles Engine (/api/subtitles?imdb=...&season=...&episode=...&q=...)
   if (pathname === "/api/subtitles") {
-    const imdb = urlParams.searchParams.get("imdb") || reqUrlObj.searchParams.get("imdb");
+    let imdb = urlParams.searchParams.get("imdb") || reqUrlObj.searchParams.get("imdb");
     const season = urlParams.searchParams.get("season") || reqUrlObj.searchParams.get("season");
     const episode = urlParams.searchParams.get("episode") || reqUrlObj.searchParams.get("episode");
     const q = urlParams.searchParams.get("q") || reqUrlObj.searchParams.get("q");
@@ -568,11 +592,26 @@ async function handler(req, res) {
     try {
       let targetImdb = imdb;
       if (!targetImdb && q) {
-        const cleanQuery = q.replace(/\bmp4\b|\bmkv\b/gi, "").trim() || q;
-        const queryCandidates = buildSearchQueries(cleanQuery, "all");
-        const meta = await resolveMediaMeta(queryCandidates);
-        if (meta && (meta.id || meta.imdb_id)) {
-          targetImdb = meta.id || meta.imdb_id;
+        const trimmedQ = q.trim();
+        // Check if query itself is an IMDb ID (e.g. tt1375666)
+        if (/^tt\d{5,10}$/i.test(trimmedQ)) {
+          targetImdb = trimmedQ.toLowerCase();
+        } else {
+          const isSeries = !!(season && episode);
+          const { title, year } = extractCleanTitleAndYear(trimmedQ);
+          const searchQueries = [];
+          if (title) {
+            if (year && !isSeries) searchQueries.push(`${title} ${year}`);
+            searchQueries.push(title);
+          }
+          if (!isSeries) {
+            searchQueries.push(...buildSearchQueries(trimmedQ, "all"));
+          }
+
+          const meta = await resolveMediaMeta(searchQueries, isSeries);
+          if (meta && (meta.id || meta.imdb_id)) {
+            targetImdb = meta.id || meta.imdb_id;
+          }
         }
       }
 
@@ -589,7 +628,7 @@ async function handler(req, res) {
         subUrl = `https://opensubtitles-v3.strem.io/subtitles/movie/${targetImdb}.json`;
       }
 
-      const json = await fetchJson(subUrl, 4000);
+      const json = await fetchJson(subUrl, 4500);
       const subs = (json && Array.isArray(json.subtitles)) ? json.subtitles : [];
 
       res.writeHead(200, { "Content-Type": "application/json" });
