@@ -1311,6 +1311,16 @@
     let autoPlayQueue = [];
     let autoPlayIndex = 0;
     let isAutoPlayActive = false;
+    let isFailoverInProgress = false;
+    let playbackWatchdogTimer = null;
+    let stallTimer = null;
+    let ingestionPollTimer = null;
+    let libraryRefreshTimer = null;
+    let currentStreamUrl = "";
+    const playerSection = document.getElementById("playerSection");
+    const mediaTitle = document.getElementById("mediaTitle");
+    const mediaSub = document.getElementById("mediaSub");
+    const externalPlayBtn = document.getElementById("externalPlayBtn");
 
     async function autoPlayBestTorrent(item) {
       playPaperFeed();
@@ -1395,18 +1405,79 @@
       }
     }
 
-    async function dispatchCandidate(idx) {
-      if (!autoPlayQueue || idx >= autoPlayQueue.length) {
+    function clearAllPlaybackMonitors() {
+      if (stallTimer) {
+        clearTimeout(stallTimer);
+        clearInterval(stallTimer);
+        stallTimer = null;
+      }
+      if (playbackWatchdogTimer) {
+        clearInterval(playbackWatchdogTimer);
+        playbackWatchdogTimer = null;
+      }
+      if (ingestionPollTimer) {
+        clearInterval(ingestionPollTimer);
+        ingestionPollTimer = null;
+      }
+    }
+
+    function triggerFailover(reason) {
+      if (isFailoverInProgress) return;
+
+      clearAllPlaybackMonitors();
+
+      console.warn(`[STUVIO FAILOVER] Triggered: "${reason}" | Current Candidate: ${autoPlayIndex + 1}/${autoPlayQueue?.length || 0}`);
+
+      if (isAutoPlayActive && autoPlayQueue && autoPlayIndex + 1 < autoPlayQueue.length) {
+        isFailoverInProgress = true;
+        const nextIdx = autoPlayIndex + 1;
+        const nextCandidate = autoPlayQueue[nextIdx];
+
+        // Clean up previous artplayer instance to stop audio/network immediately
+        if (art) {
+          try { art.destroy(); } catch (e) {}
+          art = null;
+        }
+
+        const mediaSubEl = document.getElementById("mediaSub");
+        if (mediaSubEl) {
+          mediaSubEl.innerHTML = `
+            <span class="text-[var(--ink-warning)] font-bold">⚠️ ${reason.toUpperCase()}</span>
+            <span class="text-[var(--ink-accent)] animate-pulse font-mono"> // AUTO-FAILOVER TO CANDIDATE ${nextIdx + 1}/${autoPlayQueue.length}...</span>
+          `;
+        }
+
+        setTimeout(() => {
+          isFailoverInProgress = false;
+          dispatchCandidate(nextIdx);
+        }, 1000);
+      } else {
         isAutoPlayActive = false;
-        mediaSub.innerHTML = `
-          <span class="text-[var(--ink-danger)] font-bold">ALL CANDIDATES EXHAUSTED IN BROWSER</span>
-          <span class="text-[var(--ink-dim)]"> // LAUNCH IN VLC OR STREMIO FOR 0% BUFFER...</span>
-        `;
+        const skipBtn = document.getElementById("skipCandidateBtn");
+        if (skipBtn) skipBtn.classList.add("hidden");
+
         const codecNotice = document.getElementById("codecNotice");
         if (codecNotice) {
           codecNotice.classList.remove("hidden");
           codecNotice.classList.add("flex");
         }
+
+        const mediaSubEl = document.getElementById("mediaSub");
+        if (mediaSubEl) {
+          mediaSubEl.innerHTML = `
+            <span class="text-[var(--ink-danger)] font-bold">ALL ${autoPlayQueue?.length || 1} STREAM CANDIDATES EXHAUSTED IN BROWSER</span>
+            <span class="text-[var(--ink-dim)]"> // CLICK 'OPEN IN VLC' OR COPY FOR STREMIO FOR 0% BUFFER...</span>
+          `;
+        }
+      }
+    }
+
+    async function dispatchCandidate(idx) {
+      clearAllPlaybackMonitors();
+      isFailoverInProgress = false;
+
+      if (!autoPlayQueue || idx >= autoPlayQueue.length) {
+        triggerFailover("ALL CANDIDATES EXHAUSTED");
         return;
       }
 
@@ -1420,31 +1491,31 @@
         skipBtn.innerText = `⏭ NEXT (${idx + 1}/${total})`;
       }
 
-      mediaSub.innerHTML = `
-        <span class="text-[var(--ink-accent)] font-bold">[CANDIDATE ${idx + 1}/${total}]:</span>
-        <span class="text-[var(--ink-primary)] truncate font-mono"> ${t.name} </span>
-        <span class="text-[var(--ink-success)] font-mono font-bold">[▲ ${t.seeders.toLocaleString()} SEEDS]</span>
-        ${t.is_cached ? `<span class="text-[var(--ink-accent)] font-bold">[⚡ CACHED]</span>` : ''}
-      `;
+      if (art) {
+        try { art.destroy(); } catch (e) {}
+        art = null;
+      }
+
+      const codecNotice = document.getElementById("codecNotice");
+      if (codecNotice) codecNotice.classList.add("hidden");
+
+      const mediaSubEl = document.getElementById("mediaSub");
+      if (mediaSubEl) {
+        mediaSubEl.innerHTML = `
+          <span class="text-[var(--ink-accent)] font-bold">[CANDIDATE ${idx + 1}/${total}]:</span>
+          <span class="text-[var(--ink-primary)] truncate font-mono"> ${t.name} </span>
+          <span class="text-[var(--ink-success)] font-mono font-bold">[▲ ${(t.seeders || 0).toLocaleString()} SEEDS]</span>
+          ${t.is_cached ? `<span class="text-[var(--ink-accent)] font-bold">[⚡ CACHED]</span>` : ''}
+        `;
+      }
 
       addAndStream(t.magnet, t.name, t.info_hash, activeTargetMedia?.id || t.imdb);
     }
 
     function skipToNextCandidate() {
       playPaperTick();
-      if (autoPlayQueue && autoPlayQueue.length > autoPlayIndex + 1) {
-        mediaSub.innerHTML = `
-          <span class="text-[var(--ink-warning)] font-bold">SKIPPING TO CANDIDATE ${autoPlayIndex + 2}/${autoPlayQueue.length}...</span>
-        `;
-        if (stallTimer) {
-          clearTimeout(stallTimer);
-          stallTimer = null;
-        }
-        if (ingestionPollTimer) {
-          clearInterval(ingestionPollTimer);
-          ingestionPollTimer = null;
-        }
-        dispatchCandidate(autoPlayIndex + 1);
+      if (autoPlayQueue && autoPlayIndex + 1 < autoPlayQueue.length) {
+        triggerFailover("USER SKIPPED TO NEXT CANDIDATE");
       } else {
         alert("End of candidate queue. Click '🔍 CHOOSE SLIP' to browse all swarms manually.");
       }
@@ -1797,15 +1868,6 @@
     // ==========================================
     // 8. TorBox Cache Dispatch & Swarm Ingestion
     // ==========================================
-    const playerSection = document.getElementById("playerSection");
-    const mediaTitle = document.getElementById("mediaTitle");
-    const mediaSub = document.getElementById("mediaSub");
-    const externalPlayBtn = document.getElementById("externalPlayBtn");
-    let currentStreamUrl = "";
-    let ingestionPollTimer = null;
-    let libraryRefreshTimer = null;
-    let stallTimer = null;
-
     function dismissCodecNotice() {
       const el = document.getElementById("codecNotice");
       if (el) el.classList.add("hidden");
@@ -2154,11 +2216,7 @@
       }
 
       activeImdbId = imdb || activeTargetMedia?.imdb || null;
-
-      if (ingestionPollTimer) {
-        clearInterval(ingestionPollTimer);
-        ingestionPollTimer = null;
-      }
+      clearAllPlaybackMonitors();
 
       playerSection.classList.remove("hidden");
       playerSection.classList.add("flex");
@@ -2189,9 +2247,17 @@
         let targetHash = (infoHash || "").toLowerCase();
         try {
           const createJson = await createRes.json();
-          if (createJson && createJson.data) {
-            targetTorrentId = createJson.data.torrent_id;
-            if (createJson.data.hash) targetHash = createJson.data.hash.toLowerCase();
+          if (createJson) {
+            if (createJson.data) {
+              targetTorrentId = createJson.data.torrent_id;
+              if (createJson.data.hash) targetHash = createJson.data.hash.toLowerCase();
+            } else if (!createJson.success) {
+              const detail = (createJson.detail || createJson.error || "").toLowerCase();
+              if (!detail.includes("already") && isAutoPlayActive) {
+                triggerFailover(`TORBOX REJECTED MAGNET (${createJson.detail || "ERROR"})`);
+                return;
+              }
+            }
           }
         } catch (e) {}
 
@@ -2206,7 +2272,13 @@
               headers: { "Authorization": `Bearer ${apiKey}` }
             });
             const listJson = await listRes.json();
-            if (!listJson.success || !Array.isArray(listJson.data)) return;
+            if (!listJson.success || !Array.isArray(listJson.data)) {
+              if (isAutoPlayActive && attempts >= 4) {
+                triggerFailover("TORBOX ACCOUNT SYNC FAILED");
+                return;
+              }
+              return;
+            }
 
             const found = listJson.data.find(t => 
               (targetTorrentId && t.id === targetTorrentId) ||
@@ -2223,10 +2295,7 @@
 
               if (isCached) {
                 // 100% CACHED! Launch video immediately!
-                if (ingestionPollTimer) {
-                  clearInterval(ingestionPollTimer);
-                  ingestionPollTimer = null;
-                }
+                clearAllPlaybackMonitors();
                 if (ingestionNotice) ingestionNotice.classList.add("hidden");
                 mediaSub.innerText = "TORBOX CACHE VERIFIED (100%) // STARTING STREAM PIPELINE...";
 
@@ -2247,50 +2316,81 @@
                 if (bestFile) {
                   playFile(found.id, bestFile.id, bestFile.name, activeImdbId);
                 } else {
-                  switchView("library");
-                  fetchLibrary();
+                  if (isAutoPlayActive) {
+                    triggerFailover("NO PLAYABLE VIDEO FILES FOUND IN TORRENT");
+                  } else {
+                    switchView("library");
+                    fetchLibrary();
+                  }
                 }
                 return;
               } else {
-                // Ingesting from peer swarm into TorBox storage
-                if (ingestionNotice) {
-                  ingestionNotice.classList.remove("hidden");
-                  ingestionNotice.classList.add("flex");
-                  const pct = Math.min(99, Math.round((found.progress || 0) * 100));
-                  const speedMb = ((found.download_speed || 0) / (1024 * 1024)).toFixed(1);
-                  const eta = found.eta ? `${found.eta}s remaining` : "buffering peers...";
-                  
-                  document.getElementById("ingestionProgressBar").style.width = `${Math.max(4, pct)}%`;
-                  document.getElementById("ingestionPercent").innerText = `${pct}%`;
-                  document.getElementById("ingestionSpeed").innerText = `${speedMb} MB/s`;
-                  document.getElementById("ingestionStatusText").innerText = `INGESTING SWARM: ${pct}% (${eta})`;
-                  mediaSub.innerText = `DOWNLOADING TO TORBOX CLOUD [${pct}% @ ${speedMb} MB/s] // AUTO-PLAYING WHEN READY...`;
+                // Torrent is NOT cached (it is currently downloading in TorBox)
+                if (isAutoPlayActive) {
+                  const remainingAttempts = Math.max(0, 4 - attempts);
+                  const remainingSec = (remainingAttempts * 1.5).toFixed(0);
 
-                  if (isAutoPlayActive && attempts >= 7 && (found.download_speed || 0) < 50000 && (found.progress || 0) < 0.05) {
-                    if (autoPlayQueue && autoPlayQueue.length > autoPlayIndex + 1) {
-                      if (ingestionPollTimer) {
-                        clearInterval(ingestionPollTimer);
-                        ingestionPollTimer = null;
-                      }
-                      if (ingestionNotice) ingestionNotice.classList.add("hidden");
-                      mediaSub.innerHTML = `
-                        <span class="text-[var(--ink-warning)] font-bold">SWARM UNCACHED OR SLOW</span>
-                        <span class="text-[var(--ink-accent)] animate-pulse"> // FAILING OVER TO CANDIDATE ${autoPlayIndex + 2}/${autoPlayQueue.length}...</span>
-                      `;
-                      setTimeout(() => { dispatchCandidate(autoPlayIndex + 1); }, 1000);
-                      return;
-                    }
+                  if (ingestionNotice) {
+                    ingestionNotice.classList.remove("hidden");
+                    ingestionNotice.classList.add("flex");
+                    const pct = Math.min(99, Math.round((found.progress || 0) * 100));
+                    const speedMb = ((found.download_speed || 0) / (1024 * 1024)).toFixed(1);
+
+                    document.getElementById("ingestionProgressBar").style.width = `${Math.max(4, pct)}%`;
+                    document.getElementById("ingestionPercent").innerText = `${pct}%`;
+                    document.getElementById("ingestionSpeed").innerText = `${speedMb} MB/s`;
+                    document.getElementById("ingestionStatusText").innerText = `UNCACHED SWARM (${pct}%) // AUTO-FAILOVER IN ${remainingSec}s`;
+                  }
+
+                  mediaSub.innerHTML = `
+                    <span class="text-[var(--ink-warning)] font-bold">TORRENT UNCACHED IN TORBOX [CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}]</span>
+                    <span class="text-[var(--ink-accent)] font-mono"> // AUTO-FAILOVER IN ${remainingSec}s...</span>
+                  `;
+
+                  if (attempts >= 4) {
+                    triggerFailover(`TORRENT NOT CACHED IN TORBOX (CANDIDATE ${autoPlayIndex + 1})`);
+                    return;
+                  }
+                } else {
+                  // Manual ledger stream
+                  if (ingestionNotice) {
+                    ingestionNotice.classList.remove("hidden");
+                    ingestionNotice.classList.add("flex");
+                    const pct = Math.min(99, Math.round((found.progress || 0) * 100));
+                    const speedMb = ((found.download_speed || 0) / (1024 * 1024)).toFixed(1);
+                    const eta = found.eta ? `${found.eta}s remaining` : "buffering peers...";
+
+                    document.getElementById("ingestionProgressBar").style.width = `${Math.max(4, pct)}%`;
+                    document.getElementById("ingestionPercent").innerText = `${pct}%`;
+                    document.getElementById("ingestionSpeed").innerText = `${speedMb} MB/s`;
+                    document.getElementById("ingestionStatusText").innerText = `INGESTING SWARM: ${pct}% (${eta})`;
+                    mediaSub.innerText = `DOWNLOADING TO TORBOX CLOUD [${pct}% @ ${speedMb} MB/s] // AUTO-PLAYING WHEN READY...`;
                   }
                 }
               }
+            } else {
+              // Not found yet in mylist
+              if (isAutoPlayActive) {
+                const remainingSec = Math.max(0, (4 - attempts) * 1.5).toFixed(0);
+                mediaSub.innerHTML = `
+                  <span class="text-[var(--ink-accent)] font-bold">VERIFYING DEBRID CACHE [CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}]...</span>
+                  <span class="text-[var(--ink-dim)] font-mono"> (POLL ${attempts}/4 // ${remainingSec}s)</span>
+                `;
+                if (attempts >= 4) {
+                  triggerFailover(`TORRENT NOT LOCATED IN TORBOX (CANDIDATE ${autoPlayIndex + 1})`);
+                  return;
+                }
+              }
             }
-          } catch (e) {}
+          } catch (e) {
+            if (isAutoPlayActive && attempts >= 3) {
+              triggerFailover("COMMUNICATION ERROR WITH TORBOX");
+              return;
+            }
+          }
 
-          if (attempts >= 180) { // 4.5 minutes maximum timeout
-            if (ingestionPollTimer) {
-              clearInterval(ingestionPollTimer);
-              ingestionPollTimer = null;
-            }
+          if (attempts >= 180) {
+            clearAllPlaybackMonitors();
             mediaSub.innerText = "INGESTION IN PROGRESS. CHECK ACCOUNT LEDGER.";
           }
         };
@@ -2299,9 +2399,8 @@
         ingestionPollTimer = setInterval(checkState, 1500);
 
       } catch (err) {
-        if (isAutoPlayActive && autoPlayQueue && autoPlayQueue.length > autoPlayIndex + 1) {
-          mediaSub.innerText = `SUBMIT FAILED // FAILING OVER TO CANDIDATE ${autoPlayIndex + 2}/${autoPlayQueue.length}...`;
-          setTimeout(() => { dispatchCandidate(autoPlayIndex + 1); }, 1000);
+        if (isAutoPlayActive) {
+          triggerFailover("MAGNET SUBMIT FAILED: " + err.message);
           return;
         }
         mediaSub.innerText = "ERROR TRANSMITTING STREAM ORDER.";
@@ -2463,7 +2562,7 @@
     }
 
     // ==========================================
-    // 10. Artplayer Launcher & Codec Stall Guard
+    // 10. Artplayer Launcher & Continuous Playback Watchdog
     // ==========================================
     async function playFile(torrentId, fileId, fileName, imdbId) {
       playerSection.classList.remove("hidden");
@@ -2477,10 +2576,7 @@
       const ingestionNotice = document.getElementById("ingestionNotice");
       if (ingestionNotice) ingestionNotice.classList.add("hidden");
 
-      if (stallTimer) {
-        clearTimeout(stallTimer);
-        stallTimer = null;
-      }
+      clearAllPlaybackMonitors();
 
       try {
         let resolvedUrl = "";
@@ -2500,6 +2596,10 @@
           });
           const json = await res.json();
           if (!json.success || !json.data) {
+            if (isAutoPlayActive) {
+              triggerFailover(`STREAM RESOLUTION FAILED (${json.detail || "URL UNAVAILABLE"})`);
+              return;
+            }
             mediaSub.innerText = `STREAM FAILURE: ${json.detail || "UNABLE TO RESOLVE"}`;
             return;
           }
@@ -2509,7 +2609,10 @@
         currentStreamUrl = resolvedUrl;
         updateExternalPlayerLinks(currentStreamUrl, fileName);
 
-        if (art) art.destroy();
+        if (art) {
+          try { art.destroy(); } catch (e) {}
+          art = null;
+        }
 
         const isM3u8 = currentStreamUrl.includes(".m3u8");
 
@@ -2570,100 +2673,138 @@
 
         mediaSub.innerText = "BUFFERING DEBRID STREAM FROM TORBOX CDN...";
 
-        let playbackConfirmed = false;
+        // Continuous Playback Watchdog Engine
+        let elapsedSeconds = 0;
+        let consecutiveStallSeconds = 0;
+        let lastCurrentTime = -1;
+        let hasPlaybackStarted = false;
 
-        art.on("video:waiting", () => {
-          if (!playbackConfirmed) {
-            mediaSub.innerText = "BUFFERING STREAM CHUNKS FROM TORBOX DEBRID CDN...";
+        // Reset stall counts on user seeking
+        art.on("video:seeking", () => {
+          consecutiveStallSeconds = 0;
+        });
+        art.on("video:seeked", () => {
+          consecutiveStallSeconds = 0;
+        });
+
+        // Error Handlers for codec / format / network rejections
+        art.on("video:error", (e) => {
+          console.warn("[Artplayer] video:error event:", e);
+          triggerFailover(`CODEC / DECODE RESTRICTION ON CANDIDATE ${autoPlayIndex + 1}`);
+        });
+
+        art.on("error", (e) => {
+          console.warn("[Artplayer] player error event:", e);
+          triggerFailover(`STREAM PLAYBACK ERROR ON CANDIDATE ${autoPlayIndex + 1}`);
+        });
+
+        if (art.video) {
+          art.video.addEventListener("error", (e) => {
+            console.warn("[NativeVideo] error event:", e);
+            triggerFailover(`NATIVE VIDEO ERROR ON CANDIDATE ${autoPlayIndex + 1}`);
+          });
+        }
+
+        // Active 1-second watchdog interval
+        playbackWatchdogTimer = setInterval(() => {
+          elapsedSeconds++;
+
+          if (!art || !art.video) {
+            clearAllPlaybackMonitors();
+            return;
           }
-        });
 
-        art.on("video:canplay", () => {
-          mediaSub.innerText = "STREAM DATA BUFFERED // COMMENCING PLAYBACK...";
-        });
+          const currentT = art.currentTime || 0;
+          const isPaused = art.video.paused;
 
-        art.on("video:loadedmetadata", () => {
-          mediaSub.innerText = "METADATA READ // DECODING VIDEO STREAM...";
-        });
+          // Did playback advance by at least 0.25s?
+          const didAdvance = (currentT - lastCurrentTime) > 0.25;
+          lastCurrentTime = currentT;
 
-        art.on("video:playing", () => {
-          playbackConfirmed = true;
-          if (stallTimer) clearTimeout(stallTimer);
-          if (codecNotice) codecNotice.classList.add("hidden");
-          mediaSub.innerText = "STREAMING DIRECT DEBRID CDN // PLAYBACK ACTIVE";
-        });
-
-        art.on("video:timeupdate", () => {
-          if (art.currentTime > 0.5 && !playbackConfirmed) {
-            playbackConfirmed = true;
-            if (stallTimer) clearTimeout(stallTimer);
-            if (codecNotice) codecNotice.classList.add("hidden");
-            mediaSub.innerText = "STREAMING DIRECT DEBRID CDN // PLAYBACK ACTIVE";
-          }
-        });
-
-        // Buffer / Stall Detector: 12-second timeout triggers automatic failover to next candidate torrent!
-        stallTimer = setTimeout(() => {
-          if (!playbackConfirmed) {
-            if (isAutoPlayActive && autoPlayQueue && autoPlayQueue.length > autoPlayIndex + 1) {
+          if (didAdvance) {
+            consecutiveStallSeconds = 0;
+            if (currentT >= 1.0) {
+              hasPlaybackStarted = true;
+              const notice = document.getElementById("codecNotice");
+              if (notice) notice.classList.add("hidden");
               mediaSub.innerHTML = `
-                <span class="text-[var(--ink-warning)] font-bold">⚠️ BUFFER TIMED OUT (12s) ON CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}</span>
-                <span class="text-[var(--ink-accent)] animate-pulse"> // FAILING OVER TO NEXT SWARM...</span>
+                <span class="text-[var(--ink-success)] font-bold">STREAMING DIRECT DEBRID CDN</span>
+                <span class="text-[var(--ink-dim)] font-mono"> // PLAYBACK VERIFIED (0% BUFFER)</span>
               `;
-              setTimeout(() => {
-                dispatchCandidate(autoPlayIndex + 1);
-              }, 1000);
-            } else {
-              if (codecNotice) {
-                codecNotice.classList.remove("hidden");
-                codecNotice.classList.add("flex");
-              }
-              mediaSub.innerText = "⚡ BROWSER BUFFERING SLOWLY. CLICK 'OPEN IN VLC' OR COPY FOR STREMIO.";
             }
-          }
-        }, 12000);
-
-        art.on("error", () => {
-          if (isAutoPlayActive && autoPlayQueue && autoPlayQueue.length > autoPlayIndex + 1) {
-            mediaSub.innerHTML = `
-              <span class="text-[var(--ink-danger)] font-bold">CODEC ERROR ON CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}</span>
-              <span class="text-[var(--ink-accent)] animate-pulse"> // FAILING OVER TO NEXT SWARM...</span>
-            `;
-            setTimeout(() => {
-              dispatchCandidate(autoPlayIndex + 1);
-            }, 1000);
           } else {
-            if (codecNotice) {
-              codecNotice.classList.remove("hidden");
-              codecNotice.classList.add("flex");
+            // Did not advance
+            if (isPaused && hasPlaybackStarted && currentT > 2.0) {
+              // User intentionally paused video; don't count as stall
+              consecutiveStallSeconds = 0;
+            } else {
+              consecutiveStallSeconds++;
             }
-            mediaSub.innerText = "BROWSER CODEC RESTRICTION (AC3/DTS/10-BIT). CLICK 'OPEN IN VLC' OR COPY FOR STREMIO.";
           }
-        });
+
+          // Buffer & Stall Evaluation
+          if (!hasPlaybackStarted) {
+            // Initial Startup Phase: stream has 10 seconds to begin rendering frames
+            const remaining = Math.max(0, 10 - elapsedSeconds);
+            if (isAutoPlayActive && autoPlayQueue && autoPlayIndex + 1 < autoPlayQueue.length) {
+              mediaSub.innerHTML = `
+                <span class="text-[var(--ink-warning)] font-bold">BUFFERING CDN STREAM [CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}]</span>
+                <span class="text-[var(--ink-accent)] font-mono"> // AUTO-FAILOVER IN ${remaining}s...</span>
+              `;
+            } else {
+              mediaSub.innerHTML = `
+                <span class="text-[var(--ink-warning)] font-bold">BUFFERING CDN STREAM...</span>
+                <span class="text-[var(--ink-dim)] font-mono"> [${elapsedSeconds}s]</span>
+              `;
+            }
+
+            if (elapsedSeconds >= 10) {
+              triggerFailover(`BUFFER TIMED OUT (10s) ON CANDIDATE ${autoPlayIndex + 1}`);
+              return;
+            }
+          } else {
+            // Steady Playback Phase: detect mid-stream freezes or network stalls
+            if (consecutiveStallSeconds >= 2) {
+              const stallRemaining = Math.max(0, 8 - consecutiveStallSeconds);
+              if (isAutoPlayActive && autoPlayQueue && autoPlayIndex + 1 < autoPlayQueue.length) {
+                mediaSub.innerHTML = `
+                  <span class="text-[var(--ink-warning)] font-bold">STREAM BUFFERING [STALLED ${consecutiveStallSeconds}s]</span>
+                  <span class="text-[var(--ink-accent)] font-mono"> // AUTO-FAILOVER IN ${stallRemaining}s...</span>
+                `;
+              }
+            }
+
+            if (consecutiveStallSeconds >= 8) {
+              triggerFailover(`PLAYBACK FROZEN / BUFFER STALL (8s) ON CANDIDATE ${autoPlayIndex + 1}`);
+              return;
+            }
+          }
+        }, 1000);
 
       } catch (err) {
-        mediaSub.innerText = "FAILED TO CONNECT TO STREAM CDN.";
+        if (isAutoPlayActive) {
+          triggerFailover("FAILED TO CONNECT TO STREAM CDN");
+        } else {
+          mediaSub.innerText = "FAILED TO CONNECT TO STREAM CDN.";
+        }
       }
     }
 
     function closePlayer() {
-      if (art) art.destroy();
-      if (stallTimer) {
-        clearTimeout(stallTimer);
-        stallTimer = null;
+      clearAllPlaybackMonitors();
+      if (art) {
+        try { art.destroy(); } catch (e) {}
+        art = null;
       }
-      if (ingestionPollTimer) {
-        clearInterval(ingestionPollTimer);
-        ingestionPollTimer = null;
-      }
+      isAutoPlayActive = false;
+      autoPlayQueue = [];
+      autoPlayIndex = 0;
+      isFailoverInProgress = false;
+
       const codecNotice = document.getElementById("codecNotice");
       if (codecNotice) codecNotice.classList.add("hidden");
       const ingestionNotice = document.getElementById("ingestionNotice");
       if (ingestionNotice) ingestionNotice.classList.add("hidden");
-
-      isAutoPlayActive = false;
-      autoPlayQueue = [];
-      autoPlayIndex = 0;
       const skipBtn = document.getElementById("skipCandidateBtn");
       if (skipBtn) skipBtn.classList.add("hidden");
 
