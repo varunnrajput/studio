@@ -67,10 +67,15 @@ async function fetchJson(url, timeoutMs = 5000, maxRedirects = 3) {
 }
 
 // =========================================================================
-// TRENDING RIGHT NOW ENGINES & IN-MEMORY CACHE (15 MINUTE TTL)
-// Up-to-date resources for Movies, Series, and Anime currently trending
+// TRENDING & POPULAR ENGINES & IN-MEMORY CACHE (15 MINUTE TTL)
+// Top 10 Hero Trending (with backdrops & overviews) + Popular Catalogs
 // =========================================================================
 const trendingCache = {
+  movies: { timestamp: 0, data: [] },
+  series: { timestamp: 0, data: [] },
+  anime: { timestamp: 0, data: [] }
+};
+const popularCache = {
   movies: { timestamp: 0, data: [] },
   series: { timestamp: 0, data: [] },
   anime: { timestamp: 0, data: [] }
@@ -92,11 +97,13 @@ async function getTrendingMovies() {
     try {
       const res = await fetchJson(`https://api.themoviedb.org/3/trending/movie/day?api_key=${key}`, 4500);
       if (res && res.results && res.results.length) {
-        const items = res.results.slice(0, 24).map((m, idx) => ({
+        const items = res.results.slice(0, 20).map((m, idx) => ({
           id: `tmdb-${m.id}`,
           tmdb_id: m.id,
           title: m.title || m.original_title,
           poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
+          backdrop: m.backdrop_path ? `https://image.tmdb.org/t/p/w1280${m.backdrop_path}` : (m.poster_path ? `https://image.tmdb.org/t/p/w780${m.poster_path}` : null),
+          overview: m.overview || "",
           year: (m.release_date || "").slice(0, 4) || "2026",
           rating: m.vote_average ? Number(m.vote_average.toFixed(1)) : null,
           type: "Movie",
@@ -113,10 +120,12 @@ async function getTrendingMovies() {
   try {
     const cmData = await fetchJson("https://v3-cinemeta.strem.io/catalog/movie/top.json", 4500);
     if (cmData && cmData.metas && cmData.metas.length) {
-      const items = cmData.metas.slice(0, 24).map((m, idx) => ({
+      const items = cmData.metas.slice(0, 20).map((m, idx) => ({
         id: m.id,
         title: m.name,
         poster: m.poster,
+        backdrop: m.background || m.poster,
+        overview: m.description || "",
         year: m.releaseInfo || m.year || "",
         rating: m.imdbRating || null,
         type: "Movie",
@@ -131,6 +140,54 @@ async function getTrendingMovies() {
   return trendingCache.movies.data || [];
 }
 
+async function getPopularMovies() {
+  const now = Date.now();
+  if (popularCache.movies.data.length && (now - popularCache.movies.timestamp < TRENDING_CACHE_TTL)) {
+    return popularCache.movies.data;
+  }
+
+  for (const key of TMDB_API_KEYS) {
+    try {
+      const res = await fetchJson(`https://api.themoviedb.org/3/movie/popular?api_key=${key}`, 4500);
+      if (res && res.results && res.results.length) {
+        const items = res.results.slice(0, 24).map((m, idx) => ({
+          id: `tmdb-${m.id}`,
+          tmdb_id: m.id,
+          title: m.title || m.original_title,
+          poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
+          backdrop: m.backdrop_path ? `https://image.tmdb.org/t/p/w1280${m.backdrop_path}` : null,
+          overview: m.overview || "",
+          year: (m.release_date || "").slice(0, 4) || "2026",
+          rating: m.vote_average ? Number(m.vote_average.toFixed(1)) : null,
+          type: "Movie",
+          rank: idx + 1
+        }));
+        popularCache.movies = { timestamp: now, data: items };
+        return items;
+      }
+    } catch (e) {}
+  }
+
+  try {
+    const cmData = await fetchJson("https://v3-cinemeta.strem.io/catalog/movie/top.json", 4500);
+    if (cmData && cmData.metas && cmData.metas.length) {
+      const items = cmData.metas.slice(0, 24).map((m, idx) => ({
+        id: m.id,
+        title: m.name,
+        poster: m.poster,
+        year: m.releaseInfo || m.year || "",
+        rating: m.imdbRating || null,
+        type: "Movie",
+        rank: idx + 1
+      }));
+      popularCache.movies = { timestamp: now, data: items };
+      return items;
+    }
+  } catch (e) {}
+
+  return popularCache.movies.data || [];
+}
+
 async function getTrendingSeries() {
   const now = Date.now();
   if (trendingCache.series.data.length && (now - trendingCache.series.timestamp < TRENDING_CACHE_TTL)) {
@@ -142,11 +199,13 @@ async function getTrendingSeries() {
     try {
       const res = await fetchJson(`https://api.themoviedb.org/3/trending/tv/day?api_key=${key}`, 4500);
       if (res && res.results && res.results.length) {
-        const items = res.results.slice(0, 24).map((s, idx) => ({
+        const items = res.results.slice(0, 20).map((s, idx) => ({
           id: `tmdb-tv-${s.id}`,
           tmdb_id: s.id,
           title: s.name || s.original_name,
           poster: s.poster_path ? `https://image.tmdb.org/t/p/w500${s.poster_path}` : null,
+          backdrop: s.backdrop_path ? `https://image.tmdb.org/t/p/w1280${s.backdrop_path}` : (s.poster_path ? `https://image.tmdb.org/t/p/w780${s.poster_path}` : null),
+          overview: s.overview || "",
           year: (s.first_air_date || "").slice(0, 4) || "2026",
           rating: s.vote_average ? Number(s.vote_average.toFixed(1)) : null,
           type: "Series",
@@ -163,10 +222,12 @@ async function getTrendingSeries() {
   try {
     const cmData = await fetchJson("https://v3-cinemeta.strem.io/catalog/series/top.json", 4500);
     if (cmData && cmData.metas && cmData.metas.length) {
-      const items = cmData.metas.slice(0, 24).map((m, idx) => ({
+      const items = cmData.metas.slice(0, 20).map((m, idx) => ({
         id: m.id,
         title: m.name,
         poster: m.poster,
+        backdrop: m.background || m.poster,
+        overview: m.description || "",
         year: m.releaseInfo || m.year || "",
         rating: m.imdbRating || null,
         type: "Series",
@@ -181,23 +242,53 @@ async function getTrendingSeries() {
   return trendingCache.series.data || [];
 }
 
+async function getPopularSeries() {
+  const now = Date.now();
+  if (popularCache.series.data.length && (now - popularCache.series.timestamp < TRENDING_CACHE_TTL)) {
+    return popularCache.series.data;
+  }
+
+  try {
+    const cmData = await fetchJson("https://v3-cinemeta.strem.io/catalog/series/top.json", 4500);
+    if (cmData && cmData.metas && cmData.metas.length) {
+      const items = cmData.metas.slice(0, 24).map((m, idx) => ({
+        id: m.id,
+        title: m.name,
+        poster: m.poster,
+        backdrop: m.background || m.poster,
+        overview: m.description || "",
+        year: m.releaseInfo || m.year || "",
+        rating: m.imdbRating || null,
+        type: "Series",
+        rank: idx + 1
+      }));
+      popularCache.series = { timestamp: now, data: items };
+      return items;
+    }
+  } catch (e) {}
+
+  return popularCache.series.data || [];
+}
+
 async function getTrendingAnime() {
   const now = Date.now();
   if (trendingCache.anime.data.length && (now - trendingCache.anime.timestamp < TRENDING_CACHE_TTL)) {
     return trendingCache.anime.data;
   }
 
-  // 1. Fetch live trending anime from AniList GraphQL
+  // 1. Fetch live trending anime from AniList GraphQL (top 10 with bannerImage and overview)
   try {
     const query = `
       query {
-        Page(page: 1, perPage: 24) {
+        Page(page: 1, perPage: 10) {
           media(sort: TRENDING_DESC, type: ANIME, isAdult: false) {
             id
             title { english romaji }
+            bannerImage
             coverImage { extraLarge large }
-            seasonYear
+            description
             startDate { year }
+            seasonYear
             averageScore
             format
           }
@@ -228,6 +319,8 @@ async function getTrendingAnime() {
         title: a.title.english || a.title.romaji,
         romaji: a.title.romaji,
         poster: a.coverImage.extraLarge || a.coverImage.large,
+        backdrop: a.bannerImage || a.coverImage.extraLarge,
+        overview: a.description ? a.description.replace(/<[^>]*>?/gm, "").slice(0, 180) + "..." : "",
         year: a.startDate?.year || a.seasonYear || "2026",
         rating: a.averageScore ? Number((a.averageScore / 10).toFixed(1)) : null,
         type: "Anime",
@@ -243,10 +336,12 @@ async function getTrendingAnime() {
   try {
     const animeData = await fetchJson("https://v3-cinemeta.strem.io/catalog/series/top/genre=Anime.json", 4500);
     if (animeData && animeData.metas) {
-      const items = animeData.metas.slice(0, 24).map((m, idx) => ({
+      const items = animeData.metas.slice(0, 10).map((m, idx) => ({
         id: m.id,
         title: m.name,
         poster: m.poster,
+        backdrop: m.background || m.poster,
+        overview: m.description || "",
         year: m.releaseInfo || m.year || "",
         rating: m.imdbRating || null,
         type: "Anime",
@@ -259,6 +354,83 @@ async function getTrendingAnime() {
   } catch (e) {}
 
   return trendingCache.anime.data || [];
+}
+
+async function getPopularAnime() {
+  const now = Date.now();
+  if (popularCache.anime.data.length && (now - popularCache.anime.timestamp < TRENDING_CACHE_TTL)) {
+    return popularCache.anime.data;
+  }
+
+  try {
+    const query = `
+      query {
+        Page(page: 1, perPage: 24) {
+          media(sort: POPULARITY_DESC, type: ANIME, isAdult: false) {
+            id
+            title { english romaji }
+            coverImage { extraLarge large }
+            startDate { year }
+            seasonYear
+            averageScore
+            format
+          }
+        }
+      }
+    `;
+
+    let anilistData = null;
+    if (typeof fetch === "function") {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4500);
+      const res = await fetch("https://graphql.anilist.co", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ query }),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        anilistData = await res.json();
+      }
+    }
+
+    const list = anilistData?.data?.Page?.media || [];
+    if (list.length) {
+      const items = list.map((a, idx) => ({
+        id: `anilist-${a.id}`,
+        title: a.title.english || a.title.romaji,
+        romaji: a.title.romaji,
+        poster: a.coverImage.extraLarge || a.coverImage.large,
+        backdrop: a.coverImage.extraLarge,
+        year: a.startDate?.year || a.seasonYear || "2026",
+        rating: a.averageScore ? Number((a.averageScore / 10).toFixed(1)) : null,
+        type: "Anime",
+        rank: idx + 1
+      }));
+      popularCache.anime = { timestamp: now, data: items };
+      return items;
+    }
+  } catch (e) {}
+
+  try {
+    const animeData = await fetchJson("https://v3-cinemeta.strem.io/catalog/series/top/genre=Anime.json", 4500);
+    if (animeData && animeData.metas) {
+      const items = animeData.metas.slice(0, 24).map((m, idx) => ({
+        id: m.id,
+        title: m.name,
+        poster: m.poster,
+        year: m.releaseInfo || m.year || "",
+        rating: m.imdbRating || null,
+        type: "Anime",
+        rank: idx + 1
+      }));
+      popularCache.anime = { timestamp: now, data: items };
+      return items;
+    }
+  } catch (e) {}
+
+  return popularCache.anime.data || [];
 }
 
 // Helper: Strict classification of browser-playable MP4 containers (H.264 / AAC, 8-bit)
@@ -691,26 +863,40 @@ async function handler(req, res) {
     return;
   }
 
-  // 1. Trending Right Now Feed Catalog (/catalog?type=movies|series|anime)
+  // 1. Trending & Popular Feed Catalog (/catalog?type=movies|series|anime&feed=all|trending|popular)
   if (pathname === "/catalog" || pathname.startsWith("/catalog")) {
     const type = urlParams.searchParams.get("type") || reqUrlObj.searchParams.get("type") || "movies";
+    const feed = urlParams.searchParams.get("feed") || reqUrlObj.searchParams.get("feed") || "all";
 
     try {
-      let items = [];
+      let trending = [];
+      let popular = [];
+
       if (type === "anime") {
-        items = await getTrendingAnime();
+        [trending, popular] = await Promise.all([getTrendingAnime(), getPopularAnime()]);
       } else if (type === "series") {
-        items = await getTrendingSeries();
+        [trending, popular] = await Promise.all([getTrendingSeries(), getPopularSeries()]);
       } else {
-        items = await getTrendingMovies();
+        [trending, popular] = await Promise.all([getTrendingMovies(), getPopularMovies()]);
+      }
+
+      if (feed === "trending") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(trending));
+        return;
+      }
+      if (feed === "popular") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(popular));
+        return;
       }
 
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(items));
+      res.end(JSON.stringify({ type, trending, popular }));
     } catch (err) {
-      console.error("Trending catalog handler error:", err);
+      console.error("Catalog handler error:", err);
       res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify([]));
+      res.end(JSON.stringify({ type, trending: [], popular: [] }));
     }
     return;
   }

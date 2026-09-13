@@ -291,6 +291,134 @@
     ::-webkit-scrollbar-track { background: var(--depth-void); }
     ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--depth-mid); }
+
+    /* ============================================================
+       TRENDING HERO CINEMATIC SLIDER & POPULAR INVENTORY
+       ============================================================ */
+    .hero-slider-container {
+      position: relative;
+      width: 100%;
+      height: 380px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--depth-card);
+      border: 1px solid var(--depth-border);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 25px rgba(0, 245, 212, 0.08);
+    }
+    @media (min-width: 640px) {
+      .hero-slider-container {
+        height: 440px;
+      }
+    }
+    @media (min-width: 1024px) {
+      .hero-slider-container {
+        height: 480px;
+      }
+    }
+
+    .hero-track {
+      display: flex;
+      width: 100%;
+      height: 100%;
+      transition: transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+      will-change: transform;
+    }
+
+    .hero-slide {
+      min-width: 100%;
+      width: 100%;
+      height: 100%;
+      position: relative;
+      flex-shrink: 0;
+      display: flex;
+      align-items: flex-end;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .hero-slide-backdrop {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center 20%;
+      filter: brightness(0.85) contrast(1.05);
+      transition: transform 6s ease;
+    }
+
+    .hero-slide:hover .hero-slide-backdrop {
+      transform: scale(1.03);
+    }
+
+    .hero-gradient-overlay {
+      position: absolute;
+      inset: 0;
+      background: 
+        linear-gradient(to top, rgba(8, 13, 26, 0.98) 0%, rgba(8, 13, 26, 0.8) 38%, rgba(8, 13, 26, 0.3) 72%, transparent 100%),
+        linear-gradient(to right, rgba(8, 13, 26, 0.94) 0%, rgba(8, 13, 26, 0.6) 48%, transparent 100%);
+      pointer-events: none;
+    }
+
+    .hero-nav-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(8, 13, 26, 0.78);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(0, 245, 212, 0.35);
+      color: var(--ink-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 30;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.7);
+    }
+
+    .hero-nav-btn:hover {
+      background: rgba(0, 245, 212, 0.22);
+      border-color: var(--depth-mid);
+      color: #fff;
+      transform: translateY(-50%) scale(1.08);
+      box-shadow: 0 0 20px rgba(0, 245, 212, 0.45);
+    }
+
+    .hero-nav-prev {
+      left: 14px;
+    }
+
+    .hero-nav-next {
+      right: 14px;
+    }
+
+    .hero-indicator-dot {
+      height: 5px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.3);
+      border: none;
+      padding: 0;
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+    }
+
+    .hero-indicator-dot.active {
+      width: 32px;
+      background: var(--depth-mid);
+      box-shadow: 0 0 10px var(--depth-mid);
+    }
+
+    .hero-indicator-dot:not(.active) {
+      width: 10px;
+    }
+
+    .hero-indicator-dot:hover:not(.active) {
+      background: rgba(255, 255, 255, 0.7);
+    }
   </style>
 </head>
 <body>
@@ -629,28 +757,28 @@
         </section>
 
         <!-- ============================================================
-             1. DISCOVER VIEW (TRENDING RIGHT NOW // SPATIAL RADAR)
+             1. DISCOVER VIEW (TOP 10 TRENDING HERO SLIDER & POPULAR INVENTORY)
              ============================================================ -->
-        <section id="viewDiscover" class="flex flex-col gap-4 my-4">
+        <section id="viewDiscover" class="flex flex-col gap-6 my-4">
           
-          <!-- Department Header & Elevation Switchers -->
+          <!-- Department Header & Category Switchers -->
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-dashed border-[var(--depth-border-dashed)]">
             <div>
               <div class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-[var(--depth-coral)] animate-ping"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-[var(--depth-coral)] animate-ping"></span>
                 <h2 class="text-2xl font-bold tracking-wider text-[var(--ink-primary)] font-hud uppercase">
-                  TRENDING RIGHT NOW <span class="text-[var(--depth-coral)]">//</span> LIVE
+                  DISCOVER &amp; RADAR <span class="text-[var(--depth-coral)]">//</span> LIVE
                 </h2>
                 <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-[var(--depth-coral)]/20 border border-[var(--depth-coral)] text-[var(--depth-coral)] font-bold">
                   ● LIVE FEED
                 </span>
               </div>
               <p class="text-[11px] text-[var(--ink-dim)] font-mono">
-                Real-time up-to-date resources for media trending currently worldwide. Click to play instant MP4!
+                Real-time top 10 trending media with animated hero slider, plus popular catalog for the category.
               </p>
             </div>
 
-            <!-- Department Buttons -->
+            <!-- Category Switcher Buttons -->
             <div class="flex items-center gap-1.5 self-start sm:self-auto font-hud">
               <button onclick="loadCatalog('movies')" id="btnFeedMovies" class="receipt-btn receipt-tab-active px-3.5 py-1.5 rounded text-xs tracking-wider">
                 🔥 MOVIES
@@ -664,9 +792,71 @@
             </div>
           </div>
 
-          <!-- Dynamic Point Cloud Elevation Grid -->
-          <div id="catalogGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3.5">
-            <!-- Injected dynamically via JS -->
+          <!-- Top 10 Trending Cinematic Hero Slider -->
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between text-xs font-mono">
+              <div class="flex items-center gap-2">
+                <span class="text-[var(--depth-coral)] font-bold font-hud uppercase tracking-wider flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-[var(--depth-coral)]"></span>
+                  TOP 10 TRENDING NOW
+                </span>
+                <span id="heroCategoryBadge" class="text-[10px] px-2 py-0.5 rounded bg-[var(--depth-mid)]/15 border border-[var(--depth-mid)] text-[var(--depth-mid)] font-bold">
+                  MOVIES
+                </span>
+              </div>
+              <div class="flex items-center gap-2 text-[var(--ink-dim)]">
+                <span id="heroSlideCounter" class="text-[var(--ink-primary)] font-bold font-mono">01 / 10</span>
+                <span class="text-[10px] text-[var(--ink-faint)] hidden sm:inline">[AUTO-ADVANCE: 5.5s]</span>
+              </div>
+            </div>
+
+            <div id="trendingHeroSlider" class="hero-slider-container">
+              <!-- Rangefinder Reticle Corners -->
+              <div class="card-reticle card-reticle-tl"></div>
+              <div class="card-reticle card-reticle-br"></div>
+              <div class="scanline-overlay"></div>
+
+              <!-- Sliding Track -->
+              <div id="heroTrack" class="hero-track">
+                <!-- Slides injected dynamically via JS -->
+              </div>
+
+              <!-- Navigation Controls -->
+              <button id="heroPrevBtn" onclick="prevHeroSlide()" class="hero-nav-btn hero-nav-prev" aria-label="Previous Slide">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+              </button>
+              <button id="heroNextBtn" onclick="nextHeroSlide()" class="hero-nav-btn hero-nav-next" aria-label="Next Slide">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+              </button>
+
+              <!-- Progress Indicators Bar -->
+              <div class="absolute bottom-3 right-4 sm:right-6 flex items-center gap-1.5 z-30" id="heroIndicators">
+                <!-- Dot buttons injected dynamically via JS -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Popular Section for the Same Category -->
+          <div class="flex flex-col gap-3 pt-4 border-t border-dashed border-[var(--depth-border-dashed)]">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-[var(--depth-mid)]"></span>
+                <h3 id="popularCategoryTitle" class="text-lg sm:text-xl font-bold tracking-wider text-[var(--ink-primary)] font-hud uppercase">
+                  POPULAR MOVIES <span class="text-[var(--depth-mid)]">//</span> ALL-TIME TOP SEEDED
+                </h3>
+                <span class="text-[9px] font-mono px-2 py-0.5 rounded bg-[var(--depth-mid)]/15 border border-[var(--depth-mid)] text-[var(--depth-mid)] font-bold">
+                  ★ POPULAR
+                </span>
+              </div>
+              <p class="text-[10px] text-[var(--ink-dim)] font-mono">
+                Click any title for instant autonomous stream failover or swarm radar lookup.
+              </p>
+            </div>
+
+            <!-- Dynamic Point Cloud Elevation Grid for Popular Items -->
+            <div id="catalogGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3.5">
+              <!-- Injected dynamically via JS -->
+            </div>
           </div>
         </section>
 
@@ -1305,54 +1495,272 @@
     }
 
     // ==========================================
-    // 6. Discover Inventory Catalog (Point Cloud Elevation Grid)
+    // 6. Discover Inventory Catalog & Cinematic Hero Slider
     // ==========================================
     const catalogGrid = document.getElementById("catalogGrid");
+
+    let heroSliderState = {
+      items: [],
+      currentIndex: 0,
+      autoSlideTimer: null,
+      isHovered: false
+    };
+
+    function stopHeroAutoSlide() {
+      if (heroSliderState.autoSlideTimer) {
+        clearInterval(heroSliderState.autoSlideTimer);
+        heroSliderState.autoSlideTimer = null;
+      }
+    }
+
+    function startHeroAutoSlide() {
+      stopHeroAutoSlide();
+      if (!heroSliderState.items || heroSliderState.items.length <= 1) return;
+      heroSliderState.autoSlideTimer = setInterval(() => {
+        if (!heroSliderState.isHovered && document.visibilityState === "visible") {
+          const next = (heroSliderState.currentIndex + 1) % heroSliderState.items.length;
+          goToHeroSlide(next, false);
+        }
+      }, 5500);
+    }
+
+    function goToHeroSlide(index, userTriggered = true) {
+      if (userTriggered) playPaperTick();
+      if (!heroSliderState.items.length) return;
+      const total = heroSliderState.items.length;
+      heroSliderState.currentIndex = (index + total) % total;
+      const track = document.getElementById("heroTrack");
+      if (track) {
+        track.style.transform = `translateX(-${heroSliderState.currentIndex * 100}%)`;
+      }
+      const counter = document.getElementById("heroSlideCounter");
+      if (counter) {
+        counter.innerText = `${String(heroSliderState.currentIndex + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`;
+      }
+      const indicators = document.querySelectorAll("#heroIndicators .hero-indicator-dot");
+      indicators.forEach((dot, idx) => {
+        if (idx === heroSliderState.currentIndex) {
+          dot.classList.add("active");
+        } else {
+          dot.classList.remove("active");
+        }
+      });
+      if (userTriggered) {
+        startHeroAutoSlide();
+      }
+    }
+
+    function nextHeroSlide() {
+      goToHeroSlide(heroSliderState.currentIndex + 1, true);
+    }
+
+    function prevHeroSlide() {
+      goToHeroSlide(heroSliderState.currentIndex - 1, true);
+    }
+
+    function renderHeroSlider(trendingList, type) {
+      const top10 = (trendingList || []).slice(0, 10);
+      heroSliderState.items = top10;
+      heroSliderState.currentIndex = 0;
+      stopHeroAutoSlide();
+
+      const track = document.getElementById("heroTrack");
+      const indicators = document.getElementById("heroIndicators");
+      const categoryBadge = document.getElementById("heroCategoryBadge");
+      const counter = document.getElementById("heroSlideCounter");
+
+      if (categoryBadge) {
+        categoryBadge.innerText = (type || "movies").toUpperCase();
+      }
+
+      if (!track || !top10.length) {
+        if (track) track.innerHTML = `<div class="w-full h-full flex items-center justify-center font-mono text-xs text-[var(--ink-dim)]">NO TRENDING SIGNALS DETECTED</div>`;
+        return;
+      }
+
+      track.innerHTML = "";
+      if (indicators) indicators.innerHTML = "";
+
+      top10.forEach((item, idx) => {
+        const rank = item.rank || (idx + 1);
+        const isTop3 = rank <= 3;
+        const backdropUrl = item.backdrop || item.poster || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1280&q=80";
+        const fallbackPoster = item.poster || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80";
+        const depthZ = (0.2 + (rank * 0.12)).toFixed(1);
+
+        const slide = document.createElement("div");
+        slide.className = "hero-slide group";
+        slide.innerHTML = `
+          <!-- High-Res Cinematic Backdrop Image -->
+          <img 
+            src="${backdropUrl}" 
+            alt="${item.title}" 
+            class="hero-slide-backdrop" 
+            loading="${idx === 0 ? 'eager' : 'lazy'}"
+            onerror="this.onerror=null; this.src='${fallbackPoster}';"
+          />
+
+          <!-- Multi-Layer Atmospheric Depth Gradients -->
+          <div class="hero-gradient-overlay"></div>
+
+          <!-- Rangefinder Corner Reticles -->
+          <div class="card-reticle card-reticle-tl"></div>
+          <div class="card-reticle card-reticle-br"></div>
+
+          <!-- Slide Content Overlay -->
+          <div class="relative z-20 w-full p-4 sm:p-7 md:p-9 flex flex-col gap-2 max-w-3xl pointer-events-auto">
+            <!-- Metadata & Telemetry Chips -->
+            <div class="flex flex-wrap items-center gap-2 text-xs font-mono">
+              <span class="px-2.5 py-0.5 rounded font-bold text-[10px] tracking-wider uppercase ${isTop3 ? 'bg-[var(--depth-coral)] text-black shadow-[0_0_12px_rgba(255,51,102,0.4)]' : 'bg-[var(--depth-near)] text-black'}">
+                🔥 #${rank} TRENDING TODAY
+              </span>
+              ${item.rating ? `<span class="px-2 py-0.5 rounded bg-black/75 backdrop-blur-sm border border-[var(--depth-near)]/40 text-[var(--depth-near)] font-bold text-[10px]">★ ${item.rating}</span>` : ""}
+              ${item.year ? `<span class="px-2 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-[var(--depth-border)] text-[var(--ink-dim)] text-[10px]">${item.year}</span>` : ""}
+              <span class="px-2 py-0.5 rounded bg-[var(--depth-mid)]/15 border border-[var(--depth-mid)]/40 text-[var(--depth-mid)] font-bold text-[10px] uppercase">
+                ${(item.type || type).toUpperCase()}
+              </span>
+              <span class="text-[var(--ink-faint)] hidden sm:inline text-[10px]">RADAR Z: ${depthZ}m</span>
+            </div>
+
+            <!-- Title -->
+            <h2 class="text-2xl sm:text-4xl md:text-5xl font-bold font-hud text-white leading-tight drop-shadow-[0_3px_12px_rgba(0,0,0,0.9)] line-clamp-2" title="${item.title}">
+              ${item.title}
+            </h2>
+
+            <!-- Synopsis / Overview Excerpt -->
+            <p class="text-xs sm:text-sm text-[var(--ink-dim)] font-mono line-clamp-2 max-w-2xl leading-relaxed drop-shadow">
+              ${item.overview || 'Live sensor stream detected on active radar. Tap Stream Now for autonomous cloud cache verification and zero-buffer direct playback.'}
+            </p>
+
+            <!-- Interactive Action Buttons -->
+            <div class="flex flex-wrap items-center gap-3 pt-2">
+              <button class="btn-hero-play depth-btn-primary px-5 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-bold tracking-wider font-hud uppercase flex items-center gap-2 active:scale-95 transition">
+                <span>▶ STREAM NOW (BEST MP4)</span>
+              </button>
+              <button class="btn-hero-radar depth-btn px-4 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-mono tracking-wider uppercase text-[var(--ink-primary)] hover:border-[var(--depth-mid)] active:scale-95 transition flex items-center gap-1.5">
+                <span>[ 🔍 SWARM RADAR ]</span>
+              </button>
+            </div>
+          </div>
+        `;
+
+        const playBtn = slide.querySelector(".btn-hero-play");
+        const radarBtn = slide.querySelector(".btn-hero-radar");
+        if (playBtn) playBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); autoPlayBestTorrent(item); };
+        if (radarBtn) radarBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); selectRecommendation(item); };
+
+        track.appendChild(slide);
+
+        // Indicators
+        if (indicators) {
+          const dot = document.createElement("button");
+          dot.className = `hero-indicator-dot ${idx === 0 ? 'active' : ''}`;
+          dot.setAttribute("aria-label", `Go to slide ${idx + 1}`);
+          dot.onclick = () => goToHeroSlide(idx, true);
+          indicators.appendChild(dot);
+        }
+      });
+
+      goToHeroSlide(0, false);
+      startHeroAutoSlide();
+
+      // Pause on hover & touch swipe gestures
+      const sliderContainer = document.getElementById("trendingHeroSlider");
+      if (sliderContainer && !sliderContainer.dataset.listenersBound) {
+        sliderContainer.dataset.listenersBound = "true";
+        sliderContainer.addEventListener("mouseenter", () => {
+          heroSliderState.isHovered = true;
+        });
+        sliderContainer.addEventListener("mouseleave", () => {
+          heroSliderState.isHovered = false;
+        });
+
+        let touchStartX = 0;
+        let touchEndX = 0;
+        sliderContainer.addEventListener("touchstart", (e) => {
+          if (e.changedTouches && e.changedTouches.length) {
+            touchStartX = e.changedTouches[0].screenX;
+          }
+        }, { passive: true });
+        sliderContainer.addEventListener("touchend", (e) => {
+          if (e.changedTouches && e.changedTouches.length) {
+            touchEndX = e.changedTouches[0].screenX;
+            if (touchStartX - touchEndX > 50) {
+              nextHeroSlide();
+            } else if (touchEndX - touchStartX > 50) {
+              prevHeroSlide();
+            }
+          }
+        }, { passive: true });
+      }
+    }
 
     async function loadCatalog(type) {
       playPaperTick();
       ["btnFeedMovies", "btnFeedSeries", "btnFeedAnime"].forEach(id => {
         const b = document.getElementById(id);
-        b.classList.remove("receipt-tab-active");
-        b.classList.add("text-[var(--ink-dim)]");
+        if (b) {
+          b.classList.remove("receipt-tab-active");
+          b.classList.add("text-[var(--ink-dim)]");
+        }
       });
       const activeId = type === "movies" ? "btnFeedMovies" : type === "series" ? "btnFeedSeries" : "btnFeedAnime";
       const activeBtn = document.getElementById(activeId);
-      activeBtn.classList.add("receipt-tab-active");
-      activeBtn.classList.remove("text-[var(--ink-dim)]");
+      if (activeBtn) {
+        activeBtn.classList.add("receipt-tab-active");
+        activeBtn.classList.remove("text-[var(--ink-dim)]");
+      }
+
+      const popularTitle = document.getElementById("popularCategoryTitle");
+      if (popularTitle) {
+        popularTitle.innerHTML = `POPULAR ${type.toUpperCase()} <span class="text-[var(--depth-mid)]">//</span> ALL-TIME TOP SEEDED`;
+      }
 
       catalogGrid.innerHTML = `
         <div class="col-span-full flex flex-col items-center justify-center py-16 gap-3 text-[var(--depth-mid)] font-mono text-base">
           <div class="w-8 h-8 border-2 border-[var(--depth-mid)] border-t-transparent rounded-full animate-spin"></div>
-          <span>CALIBRATING POINT CLOUD CATALOG...</span>
+          <span>CALIBRATING SENSOR RADAR & POPULAR INVENTORY...</span>
         </div>
       `;
 
       try {
         const res = await fetch(`/catalog?type=${type}`);
-        const items = await res.json();
+        const data = await res.json();
 
-        if (!items || !items.length) {
-          catalogGrid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--ink-dim)] py-16 font-mono text-base">NO POINT CLOUD ENTRIES RETURNED.</p>`;
+        let trending = [];
+        let popular = [];
+
+        if (data && typeof data === "object") {
+          if (Array.isArray(data.trending)) {
+            trending = data.trending;
+            popular = Array.isArray(data.popular) ? data.popular : [];
+          } else if (Array.isArray(data)) {
+            trending = data.slice(0, 10);
+            popular = data.slice(10);
+          }
+        }
+
+        // Render Hero Slider with Top 10 Trending
+        renderHeroSlider(trending, type);
+
+        // Render Popular grid
+        const displayPopular = (popular && popular.length) ? popular : trending.slice(10);
+
+        if (!displayPopular || !displayPopular.length) {
+          catalogGrid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--ink-dim)] py-16 font-mono text-base">NO POPULAR ENTRIES RETURNED FOR THIS CATEGORY.</p>`;
           return;
         }
 
         catalogGrid.innerHTML = "";
-        items.forEach((item, idx) => {
+        displayPopular.forEach((item, idx) => {
           const card = document.createElement("div");
           card.className = "receipt-card rounded-lg p-2.5 flex flex-col justify-between gap-2 cursor-pointer relative group overflow-hidden border border-[var(--depth-border)] hover:border-[var(--depth-mid)]";
           card.onclick = () => { playPaperFeed(); autoPlayBestTorrent(item); };
 
           const posterUrl = item.poster || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80";
-          const rank = item.rank || (idx + 1);
+          const rank = idx + 1;
           const isTop3 = rank <= 3;
-          const isTop10 = rank <= 10;
-          const rankColor = isTop3 ? "text-[var(--depth-coral)] border-[var(--depth-coral)] bg-[var(--depth-coral)]/15" 
-                          : isTop10 ? "text-[var(--depth-near)] border-[var(--depth-near)] bg-[var(--depth-near)]/15"
-                          : "text-[var(--depth-mid)] border-[var(--depth-mid)] bg-[var(--depth-mid)]/15";
-
-          // Synthetic pseudo-depth reading for LiDAR aesthetic
-          const depthZ = (0.2 + (rank * 0.15)).toFixed(1);
+          const depthZ = (1.5 + (rank * 0.15)).toFixed(1);
 
           card.innerHTML = `
             <div class="card-reticle card-reticle-tl"></div>
@@ -1360,27 +1768,27 @@
 
             <div>
               <div class="flex items-center justify-between text-[9px] font-mono pb-1 border-b border-dashed border-[var(--depth-border-dashed)]">
-                <span class="px-1.5 py-0.2 rounded border font-bold text-[9px] ${rankColor}">
-                  ${isTop3 ? '🔥' : '⚡'} #${rank} TRENDING
+                <span class="px-1.5 py-0.2 rounded border font-bold text-[9px] ${isTop3 ? 'text-[var(--depth-mid)] border-[var(--depth-mid)] bg-[var(--depth-mid)]/15' : 'text-[var(--ink-dim)] border-[var(--depth-border)] bg-black/40'}">
+                  ★ #${rank} POPULAR
                 </span>
                 <span class="text-[var(--ink-dim)]">Z: ${depthZ}m</span>
               </div>
 
               <!-- Poster Ticket Frame with Holographic Scanline -->
               <div class="relative aspect-[2/3] w-full bg-black rounded overflow-hidden my-1.5 border border-[var(--depth-border)] shadow-md group-hover:border-[var(--depth-mid)] transition-colors">
-                <img src="${posterUrl}" alt="${item.title}" class="w-full h-full object-cover filter contrast-105 group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                <img src="${posterUrl}" alt="${item.title}" class="w-full h-full object-cover filter contrast-105 group-hover:scale-105 transition-transform duration-300" loading="lazy" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80';" />
                 <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60"></div>
                 ${item.rating ? `<span class="absolute top-1.5 right-1.5 bg-black/85 backdrop-blur-sm text-[var(--depth-near)] font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-[var(--depth-near)]/40">★ ${item.rating}</span>` : ""}
-                <span class="absolute bottom-1 left-1.5 font-mono text-[9px] text-[var(--ink-dim)] bg-black/70 px-1 rounded">${item.year || "2026"}</span>
+                <span class="absolute bottom-1 left-1.5 font-mono text-[9px] text-[var(--ink-dim)] bg-black/70 px-1 rounded">${item.year || "POPULAR"}</span>
               </div>
 
               <div class="pt-0.5">
                 <h4 class="text-xs font-bold truncate text-[var(--ink-primary)] font-hud group-hover:text-[var(--depth-mid)] transition-colors" title="${item.title}">${item.title}</h4>
                 <div class="flex items-center justify-between text-[10px] text-[var(--ink-faint)] font-mono mt-0.5">
-                  <span class="text-[var(--depth-mid)] font-bold">[${(item.type || 'MEDIA').toUpperCase()}]</span>
-                  <span class="text-[var(--depth-coral)] flex items-center gap-1 font-bold">
-                    <span class="w-1.5 h-1.5 rounded-full bg-[var(--depth-coral)] animate-pulse"></span>
-                    NOW
+                  <span class="text-[var(--depth-mid)] font-bold">[${(item.type || type || 'MEDIA').toUpperCase()}]</span>
+                  <span class="text-[var(--ink-success)] flex items-center gap-1 font-bold">
+                    <span class="w-1.5 h-1.5 rounded-full bg-[var(--ink-success)]"></span>
+                    SEEDED
                   </span>
                 </div>
               </div>
@@ -1404,7 +1812,7 @@
           catalogGrid.appendChild(card);
         });
       } catch (err) {
-        catalogGrid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--depth-coral)] py-16 font-mono text-base">FAILED TO LOAD POINT CLOUD CATALOG.</p>`;
+        catalogGrid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--depth-coral)] py-16 font-mono text-base">FAILED TO LOAD POINT CLOUD CATALOG: ${err.message}</p>`;
       }
     }
 
