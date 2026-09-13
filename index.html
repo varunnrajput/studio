@@ -887,6 +887,9 @@
               <button onclick="loadCatalog('anime')" id="btnFeedAnime" class="receipt-btn px-3.5 py-1.5 rounded text-xs tracking-wider text-[var(--ink-dim)]">
                 🌸 ANIME
               </button>
+              <button onclick="loadCatalog('manga')" id="btnFeedManga" class="receipt-btn px-3.5 py-1.5 rounded text-xs tracking-wider text-[var(--ink-dim)]">
+                📖 MANGA
+              </button>
             </div>
           </div>
 
@@ -3143,6 +3146,8 @@
               </span>
               ${item.rating ? `<span class="px-2 py-0.5 rounded bg-black/75 backdrop-blur-sm border border-[var(--depth-near)]/40 text-[var(--depth-near)] font-bold text-[10px]">★ ${item.rating}</span>` : ""}
               ${item.year ? `<span class="px-2 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-[var(--depth-border)] text-[var(--ink-dim)] text-[10px]">${item.year}</span>` : ""}
+              ${item.chapters ? `<span class="px-2 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-[var(--depth-border)] text-[var(--ink-dim)] text-[10px]">CH: ${item.chapters}</span>` : ""}
+              ${item.status ? `<span class="px-2 py-0.5 rounded bg-[var(--depth-mid)]/15 border border-[var(--depth-mid)]/40 text-[var(--depth-mid)] text-[10px] uppercase font-bold">${item.status}</span>` : ""}
               <span class="px-2 py-0.5 rounded bg-[var(--depth-mid)]/15 border border-[var(--depth-mid)]/40 text-[var(--depth-mid)] font-bold text-[10px] uppercase">
                 ${(item.type || type).toUpperCase()}
               </span>
@@ -3156,22 +3161,34 @@
 
             <!-- Synopsis / Overview Excerpt -->
             <p class="text-xs sm:text-sm text-[var(--ink-dim)] font-mono line-clamp-2 max-w-2xl leading-relaxed drop-shadow">
-              ${item.overview || 'Live sensor stream detected on active radar. Tap Stream Now for autonomous cloud cache verification and zero-buffer direct playback.'}
+              ${item.overview || 'Live sensor stream detected on active radar. Tap Read on MangaDex for online chapters or Swarm Radar for digital volumes.'}
             </p>
 
             <!-- Interactive Action Buttons -->
             <div class="flex flex-wrap items-center gap-3 pt-2">
-              <button class="btn-hero-play depth-btn-primary px-5 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-bold tracking-wider font-hud uppercase flex items-center gap-2 active:scale-95 transition">
-                <span>▶ STREAM NOW (BEST MP4)</span>
-              </button>
-              ${(item.type === 'series' || type === 'series' || type === 'anime') ? `
-                <button class="btn-hero-episodes depth-btn px-4 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-hud tracking-wider uppercase text-[var(--depth-mid)] border-[var(--depth-mid)]/40 hover:border-[var(--depth-mid)] active:scale-95 transition flex items-center gap-1.5">
-                  <span>⊞ EPISODES</span>
+              ${(type === 'manga' || item.type === 'Manga') ? `
+                <a href="${item.mangaUrl || ('https://mangadex.org/search?q=' + encodeURIComponent(item.title))}" target="_blank" rel="noopener noreferrer" class="btn-hero-read depth-btn-primary px-5 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-bold tracking-wider font-hud uppercase flex items-center gap-2 active:scale-95 transition text-black" onclick="event.stopPropagation(); playPaperFeed();">
+                  <span>📖 READ ON MANGADEX</span>
+                </a>
+                <button class="btn-hero-radar depth-btn px-4 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-mono tracking-wider uppercase text-[var(--ink-primary)] hover:border-[var(--depth-mid)] active:scale-95 transition flex items-center gap-1.5">
+                  <span>[ 🔍 SWARM RADAR // SCANS ]</span>
                 </button>
-              ` : ''}
-              <button class="btn-hero-radar depth-btn px-4 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-mono tracking-wider uppercase text-[var(--ink-primary)] hover:border-[var(--depth-mid)] active:scale-95 transition flex items-center gap-1.5">
-                <span>[ 🔍 SWARM RADAR ]</span>
-              </button>
+                <button class="btn-hero-play depth-btn px-4 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-mono tracking-wider uppercase text-[var(--depth-near)] hover:border-[var(--depth-near)] active:scale-95 transition flex items-center gap-1.5" title="Search playable anime stream adaptation">
+                  <span>[ ▶ STREAM ADAPTATION ]</span>
+                </button>
+              ` : `
+                <button class="btn-hero-play depth-btn-primary px-5 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-bold tracking-wider font-hud uppercase flex items-center gap-2 active:scale-95 transition">
+                  <span>▶ STREAM NOW (BEST MP4)</span>
+                </button>
+                ${(item.type === 'series' || type === 'series' || type === 'anime') ? `
+                  <button class="btn-hero-episodes depth-btn px-4 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-hud tracking-wider uppercase text-[var(--depth-mid)] border-[var(--depth-mid)]/40 hover:border-[var(--depth-mid)] active:scale-95 transition flex items-center gap-1.5">
+                    <span>⊞ EPISODES</span>
+                  </button>
+                ` : ''}
+                <button class="btn-hero-radar depth-btn px-4 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-mono tracking-wider uppercase text-[var(--ink-primary)] hover:border-[var(--depth-mid)] active:scale-95 transition flex items-center gap-1.5">
+                  <span>[ 🔍 SWARM RADAR ]</span>
+                </button>
+              `}
             </div>
           </div>
         `;
@@ -3231,14 +3248,14 @@
 
     async function loadCatalog(type) {
       playPaperTick();
-      ["btnFeedMovies", "btnFeedSeries", "btnFeedAnime"].forEach(id => {
+      ["btnFeedMovies", "btnFeedSeries", "btnFeedAnime", "btnFeedManga"].forEach(id => {
         const b = document.getElementById(id);
         if (b) {
           b.classList.remove("receipt-tab-active");
           b.classList.add("text-[var(--ink-dim)]");
         }
       });
-      const activeId = type === "movies" ? "btnFeedMovies" : type === "series" ? "btnFeedSeries" : "btnFeedAnime";
+      const activeId = type === "movies" ? "btnFeedMovies" : type === "series" ? "btnFeedSeries" : type === "anime" ? "btnFeedAnime" : "btnFeedManga";
       const activeBtn = document.getElementById(activeId);
       if (activeBtn) {
         activeBtn.classList.add("receipt-tab-active");
@@ -3289,7 +3306,14 @@
         displayPopular.forEach((item, idx) => {
           const card = document.createElement("div");
           card.className = "receipt-card rounded-lg p-2.5 flex flex-col justify-between gap-2 cursor-pointer relative group overflow-hidden border border-[var(--depth-border)] hover:border-[var(--depth-mid)]";
-          card.onclick = () => { playPaperFeed(); autoPlayBestTorrent(item); };
+          card.onclick = () => { 
+            playPaperFeed(); 
+            if (type === 'manga' || item.type === 'Manga') {
+              selectRecommendation(item);
+            } else {
+              autoPlayBestTorrent(item); 
+            }
+          };
 
           const posterUrl = item.poster || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80";
           const rank = idx + 1;
@@ -3320,26 +3344,37 @@
                 <h4 class="text-xs font-bold truncate text-[var(--ink-primary)] font-hud group-hover:text-[var(--depth-mid)] transition-colors" title="${item.title}">${item.title}</h4>
                 <div class="flex items-center justify-between text-[10px] text-[var(--ink-faint)] font-mono mt-0.5">
                   <span class="text-[var(--depth-mid)] font-bold">[${(item.type || type || 'MEDIA').toUpperCase()}]</span>
-                  <span class="text-[var(--ink-success)] flex items-center gap-1 font-bold">
-                    <span class="w-1.5 h-1.5 rounded-full bg-[var(--ink-success)]"></span>
-                    SEEDED
-                  </span>
+                  ${item.chapters ? `<span class="text-[var(--ink-dim)]">CH: ${item.chapters}</span>` : `
+                    <span class="text-[var(--ink-success)] flex items-center gap-1 font-bold">
+                      <span class="w-1.5 h-1.5 rounded-full bg-[var(--ink-success)]"></span>
+                      SEEDED
+                    </span>
+                  `}
                 </div>
               </div>
             </div>
 
             <div class="flex flex-col gap-1 w-full pt-1">
-              ${(item.type === 'series' || type === 'series' || type === 'anime') ? `
-                <button class="btn-episodes depth-btn w-full py-1 rounded text-[10px] tracking-wider uppercase font-bold text-[var(--depth-mid)] border-[var(--depth-mid)]/40 hover:border-[var(--depth-mid)] active:scale-95 flex items-center justify-center gap-1 font-hud">
-                  <span>⊞ SEASONS &amp; EPISODES</span>
+              ${(type === 'manga' || item.type === 'Manga') ? `
+                <a href="${item.mangaUrl || ('https://mangadex.org/search?q=' + encodeURIComponent(item.title))}" target="_blank" rel="noopener noreferrer" class="depth-btn-primary w-full py-1.5 rounded text-[10px] tracking-wider uppercase font-bold active:scale-95 flex items-center justify-center gap-1 font-hud text-black" onclick="event.stopPropagation(); playPaperFeed();">
+                  <span>📖 READ ON MANGADEX</span>
+                </a>
+                <button class="btn-browse depth-btn w-full py-1 rounded text-[10px] tracking-wider uppercase font-bold text-[var(--ink-primary)] hover:border-[var(--depth-mid)] active:scale-95 flex items-center justify-center gap-1 font-mono">
+                  <span>[ 🔍 SWARM RADAR // SCANS ]</span>
                 </button>
-              ` : ''}
-              <button class="btn-autoplay depth-btn-primary w-full py-1.5 rounded text-[10px] tracking-wider uppercase font-bold active:scale-95 flex items-center justify-center gap-1 font-hud">
-                <span>▶ PLAY BEST MP4</span>
-              </button>
-              <button class="btn-browse text-[9px] text-[var(--ink-dim)] hover:text-white underline text-center w-full py-0.5 font-mono" title="Browse and select specific swarm release manually">
-                [ 🔍 SWARM RADAR ]
-              </button>
+              ` : `
+                ${(item.type === 'series' || type === 'series' || type === 'anime') ? `
+                  <button class="btn-episodes depth-btn w-full py-1 rounded text-[10px] tracking-wider uppercase font-bold text-[var(--depth-mid)] border-[var(--depth-mid)]/40 hover:border-[var(--depth-mid)] active:scale-95 flex items-center justify-center gap-1 font-hud">
+                    <span>⊞ SEASONS &amp; EPISODES</span>
+                  </button>
+                ` : ''}
+                <button class="btn-autoplay depth-btn-primary w-full py-1.5 rounded text-[10px] tracking-wider uppercase font-bold active:scale-95 flex items-center justify-center gap-1 font-hud">
+                  <span>▶ PLAY BEST MP4</span>
+                </button>
+                <button class="btn-browse text-[9px] text-[var(--ink-dim)] hover:text-white underline text-center w-full py-0.5 font-mono" title="Browse and select specific swarm release manually">
+                  [ 🔍 SWARM RADAR ]
+                </button>
+              `}
             </div>
           `;
 

@@ -73,12 +73,14 @@ async function fetchJson(url, timeoutMs = 5000, maxRedirects = 3) {
 const trendingCache = {
   movies: { timestamp: 0, data: [] },
   series: { timestamp: 0, data: [] },
-  anime: { timestamp: 0, data: [] }
+  anime: { timestamp: 0, data: [] },
+  manga: { timestamp: 0, data: [] }
 };
 const popularCache = {
   movies: { timestamp: 0, data: [] },
   series: { timestamp: 0, data: [] },
-  anime: { timestamp: 0, data: [] }
+  anime: { timestamp: 0, data: [] },
+  manga: { timestamp: 0, data: [] }
 };
 const TRENDING_CACHE_TTL = 15 * 60 * 1000;
 const TMDB_API_KEYS = [
@@ -432,6 +434,209 @@ async function getPopularAnime() {
   } catch (e) {}
 
   return popularCache.anime.data || [];
+}
+
+async function getTrendingManga() {
+  const now = Date.now();
+  if (trendingCache.manga.data.length && (now - trendingCache.manga.timestamp < TRENDING_CACHE_TTL)) {
+    return trendingCache.manga.data;
+  }
+
+  // 1. Fetch live trending manga from AniList GraphQL (top 10 with bannerImage, chapters & overview)
+  try {
+    const query = `
+      query {
+        Page(page: 1, perPage: 10) {
+          media(sort: TRENDING_DESC, type: MANGA, isAdult: false) {
+            id
+            title { english romaji }
+            bannerImage
+            coverImage { extraLarge large }
+            description
+            startDate { year }
+            averageScore
+            format
+            status
+            chapters
+            volumes
+            genres
+          }
+        }
+      }
+    `;
+
+    let anilistData = null;
+    if (typeof fetch === "function") {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4500);
+      const res = await fetch("https://graphql.anilist.co", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ query }),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        anilistData = await res.json();
+      }
+    }
+
+    const list = anilistData?.data?.Page?.media || [];
+    if (list.length) {
+      const items = list.map((m, idx) => ({
+        id: `anilist-manga-${m.id}`,
+        anilistId: m.id,
+        title: m.title.english || m.title.romaji,
+        romaji: m.title.romaji,
+        poster: m.coverImage?.extraLarge || m.coverImage?.large,
+        backdrop: m.bannerImage || m.coverImage?.extraLarge || m.coverImage?.large,
+        overview: m.description ? m.description.replace(/<[^>]*>?/gm, "").slice(0, 180) + "..." : "",
+        year: m.startDate?.year || "2026",
+        rating: m.averageScore ? Number((m.averageScore / 10).toFixed(1)) : null,
+        type: "Manga",
+        status: m.status || "RELEASING",
+        chapters: m.chapters || null,
+        volumes: m.volumes || null,
+        genres: m.genres || [],
+        rank: idx + 1,
+        trending: true,
+        mangaUrl: `https://mangadex.org/search?q=${encodeURIComponent(m.title.english || m.title.romaji)}`
+      }));
+      trendingCache.manga = { timestamp: now, data: items };
+      return items;
+    }
+  } catch (e) {}
+
+  // Fallback: Kitsu Trending Manga
+  try {
+    const kitsuData = await fetchJson("https://kitsu.io/api/edge/trending/manga", 4500);
+    if (kitsuData && Array.isArray(kitsuData.data)) {
+      const items = kitsuData.data.slice(0, 10).map((m, idx) => {
+        const attr = m.attributes || {};
+        const title = attr.canonicalTitle || attr.titles?.en || attr.titles?.en_jp || "Manga";
+        return {
+          id: `kitsu-manga-${m.id}`,
+          title: title,
+          poster: attr.posterImage?.large || attr.posterImage?.original,
+          backdrop: attr.coverImage?.large || attr.coverImage?.original || attr.posterImage?.large,
+          overview: attr.synopsis ? attr.synopsis.slice(0, 180) + "..." : "",
+          year: attr.startDate ? attr.startDate.slice(0, 4) : "2026",
+          rating: attr.averageRating ? Number((parseFloat(attr.averageRating) / 10).toFixed(1)) : null,
+          type: "Manga",
+          status: attr.status || "RELEASING",
+          chapters: attr.chapterCount || null,
+          volumes: attr.volumeCount || null,
+          rank: idx + 1,
+          trending: true,
+          mangaUrl: `https://mangadex.org/search?q=${encodeURIComponent(title)}`
+        };
+      });
+      trendingCache.manga = { timestamp: now, data: items };
+      return items;
+    }
+  } catch (e) {}
+
+  return trendingCache.manga.data || [];
+}
+
+async function getPopularManga() {
+  const now = Date.now();
+  if (popularCache.manga.data.length && (now - popularCache.manga.timestamp < TRENDING_CACHE_TTL)) {
+    return popularCache.manga.data;
+  }
+
+  // 1. Fetch live all-time popular manga from AniList GraphQL
+  try {
+    const query = `
+      query {
+        Page(page: 1, perPage: 24) {
+          media(sort: POPULARITY_DESC, type: MANGA, isAdult: false) {
+            id
+            title { english romaji }
+            coverImage { extraLarge large }
+            bannerImage
+            description
+            startDate { year }
+            averageScore
+            format
+            status
+            chapters
+            volumes
+            genres
+          }
+        }
+      }
+    `;
+
+    let anilistData = null;
+    if (typeof fetch === "function") {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4500);
+      const res = await fetch("https://graphql.anilist.co", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ query }),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        anilistData = await res.json();
+      }
+    }
+
+    const list = anilistData?.data?.Page?.media || [];
+    if (list.length) {
+      const items = list.map((m, idx) => ({
+        id: `anilist-manga-${m.id}`,
+        anilistId: m.id,
+        title: m.title.english || m.title.romaji,
+        romaji: m.title.romaji,
+        poster: m.coverImage?.extraLarge || m.coverImage?.large,
+        backdrop: m.bannerImage || m.coverImage?.extraLarge,
+        overview: m.description ? m.description.replace(/<[^>]*>?/gm, "").slice(0, 180) + "..." : "",
+        year: m.startDate?.year || "2026",
+        rating: m.averageScore ? Number((m.averageScore / 10).toFixed(1)) : null,
+        type: "Manga",
+        status: m.status || "RELEASING",
+        chapters: m.chapters || null,
+        volumes: m.volumes || null,
+        genres: m.genres || [],
+        rank: idx + 1,
+        mangaUrl: `https://mangadex.org/search?q=${encodeURIComponent(m.title.english || m.title.romaji)}`
+      }));
+      popularCache.manga = { timestamp: now, data: items };
+      return items;
+    }
+  } catch (e) {}
+
+  // Fallback: Kitsu Popular Manga
+  try {
+    const kitsuData = await fetchJson("https://kitsu.io/api/edge/manga?sort=-userCount&page[limit]=24", 4500);
+    if (kitsuData && Array.isArray(kitsuData.data)) {
+      const items = kitsuData.data.map((m, idx) => {
+        const attr = m.attributes || {};
+        const title = attr.canonicalTitle || attr.titles?.en || attr.titles?.en_jp || "Manga";
+        return {
+          id: `kitsu-manga-${m.id}`,
+          title: title,
+          poster: attr.posterImage?.large || attr.posterImage?.original,
+          backdrop: attr.coverImage?.large || attr.coverImage?.original || attr.posterImage?.large,
+          year: attr.startDate ? attr.startDate.slice(0, 4) : "2026",
+          rating: attr.averageRating ? Number((parseFloat(attr.averageRating) / 10).toFixed(1)) : null,
+          type: "Manga",
+          status: attr.status || "RELEASING",
+          chapters: attr.chapterCount || null,
+          volumes: attr.volumeCount || null,
+          rank: idx + 1,
+          mangaUrl: `https://mangadex.org/search?q=${encodeURIComponent(title)}`
+        };
+      });
+      popularCache.manga = { timestamp: now, data: items };
+      return items;
+    }
+  } catch (e) {}
+
+  return popularCache.manga.data || [];
 }
 
 // Helper: Strict classification of browser-playable MP4 containers (H.264 / AAC, 8-bit)
@@ -1082,7 +1287,9 @@ async function handler(req, res) {
       let trending = [];
       let popular = [];
 
-      if (type === "anime") {
+      if (type === "manga") {
+        [trending, popular] = await Promise.all([getTrendingManga(), getPopularManga()]);
+      } else if (type === "anime") {
         [trending, popular] = await Promise.all([getTrendingAnime(), getPopularAnime()]);
       } else if (type === "series") {
         [trending, popular] = await Promise.all([getTrendingSeries(), getPopularSeries()]);
