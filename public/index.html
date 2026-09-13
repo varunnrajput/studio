@@ -3,813 +3,846 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>STUVIO // THERMAL RECEIPT REGISTER</title>
+  <title>STUVIO // VOLUMETRIC DEPTH MAP SENSOR &amp; DEBRID HUD</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=VT323&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,500;0,600;0,700;1,400;1,700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
   <style>
     /* ============================================================
-       DARK MODE RECEIPT PAPER ROOT & COLOR TOKENS
+       DEPTH MAP & LIDAR SPATIAL SENSOR ROOT & COLOR TOKENS
        ============================================================ */
     :root {
-      --paper-bg: #14161d;
-      --paper-sub: #1b1e27;
-      --paper-card: #181a23;
-      --paper-border: #2d3240;
-      --paper-border-dashed: #3a4052;
-      --ink-primary: #f1f4f9;
-      --ink-dim: #9aa2b2;
-      --ink-faint: #596173;
-      --ink-accent: #38bdf8;
-      --ink-success: #34d399;
-      --ink-warning: #fbbf24;
-      --ink-danger: #f87171;
-      --font-receipt: 'Space Mono', monospace;
-      --font-dot: 'VT323', monospace;
-      --font-typewriter: 'Courier Prime', monospace;
+      /* Abyssal sensor void and focal plane levels */
+      --depth-void: #050811;
+      --depth-surface: #080d1a;
+      --depth-card: #0d1527;
+      --depth-card-hover: #121c35;
+      --depth-border: #1e293b;
+      --depth-border-glow: rgba(0, 245, 212, 0.4);
+      --depth-border-dashed: #26354f;
+
+      /* False-color topographic elevation colormap (Turbo / LiDAR) */
+      --depth-near: #ff9f1c;        /* Z < 1.0m - Solar Amber / Infrared */
+      --depth-coral: #ff3366;       /* Z < 0.5m - Radiant Coral / Near Plane */
+      --depth-mid: #00f5d4;         /* Z: 1.0m - 3.5m - Luminous Cyan / Focal */
+      --depth-far: #6366f1;         /* Z > 3.5m - Spectral Indigo / Mid-Far */
+      --depth-inf: #1e1b4b;         /* Z: ∞ - Background Abyssal Violet */
+
+      /* High contrast telemetry inks */
+      --ink-primary: #f8fafc;
+      --ink-dim: #94a3b8;
+      --ink-faint: #475569;
+      --ink-accent: #00f5d4;
+      --ink-success: #10b981;
+      --ink-warning: #ff9f1c;
+      --ink-danger: #ff3366;
+
+      /* Typography tokens */
+      --font-hud: 'Chakra Petch', sans-serif;
+      --font-mono: 'Space Mono', monospace;
+      --font-code: 'JetBrains Mono', monospace;
+
+      /* Backwards-compatible mapping for script generated elements */
+      --paper-bg: var(--depth-surface);
+      --paper-sub: var(--depth-card);
+      --paper-card: var(--depth-card);
+      --paper-border: var(--depth-border);
+      --paper-border-dashed: var(--depth-border-dashed);
+      --font-receipt: var(--font-hud);
+      --font-dot: var(--font-hud);
+      --font-typewriter: var(--font-mono);
     }
 
     body {
-      font-family: var(--font-receipt);
-      background-color: #0a0b0e;
+      font-family: var(--font-hud);
+      background-color: var(--depth-void);
       background-image: 
-        radial-gradient(#1e2230 0.75px, transparent 0.75px), 
-        radial-gradient(#1e2230 0.75px, #0a0b0e 0.75px);
-      background-size: 30px 30px;
-      background-position: 0 0, 15px 15px;
+        radial-gradient(rgba(0, 245, 212, 0.08) 1px, transparent 1px),
+        radial-gradient(rgba(99, 102, 241, 0.05) 1.5px, transparent 1.5px),
+        linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+      background-size: 24px 24px, 72px 72px, 48px 48px, 48px 48px;
+      background-position: 0 0, 12px 12px, 0 0, 0 0;
       color: var(--ink-primary);
       min-height: 100vh;
       margin: 0;
-      padding: 24px 12px;
+      padding: 20px 10px;
       box-sizing: border-box;
-      selection-background-color: var(--ink-primary);
+      selection-background-color: var(--depth-mid);
       selection-color: #000;
     }
 
     ::selection {
-      background: var(--ink-primary);
-      color: #000;
+      background: var(--depth-mid);
+      color: #050811;
     }
 
     /* ============================================================
-       CONTINUOUS THERMAL RECEIPT SLIP ARCHITECTURE
+       SPATIAL LIDAR CONSOLE FRAMEWORK
        ============================================================ */
-    .receipt-roll {
-      max-width: 960px;
+    .depth-console {
+      max-width: 1040px;
       margin: 0 auto;
       position: relative;
-      filter: drop-shadow(0 25px 50px rgba(0, 0, 0, 0.9)) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.7));
+      filter: drop-shadow(0 25px 60px rgba(0, 0, 0, 0.95)) drop-shadow(0 0 35px rgba(0, 245, 212, 0.06));
     }
 
-    /* Jagged Sawtooth Serrated Tear Edges */
-    .receipt-sawtooth-top {
-      height: 14px;
-      width: 100%;
-      background: repeating-linear-gradient(
-        -45deg,
-        var(--paper-bg),
-        var(--paper-bg) 7px,
-        transparent 7px,
-        transparent 14px
-      ),
-      repeating-linear-gradient(
-        45deg,
-        var(--paper-bg),
-        var(--paper-bg) 7px,
-        transparent 7px,
-        transparent 14px
-      );
-      background-position: bottom left;
-      background-repeat: repeat-x;
-      background-size: 14px 14px;
-      transform: rotate(180deg);
-      margin-bottom: -1px;
-    }
-
-    .receipt-sawtooth-bottom {
-      height: 14px;
-      width: 100%;
-      background: repeating-linear-gradient(
-        -45deg,
-        var(--paper-bg),
-        var(--paper-bg) 7px,
-        transparent 7px,
-        transparent 14px
-      ),
-      repeating-linear-gradient(
-        45deg,
-        var(--paper-bg),
-        var(--paper-bg) 7px,
-        transparent 7px,
-        transparent 14px
-      );
-      background-position: top left;
-      background-repeat: repeat-x;
-      background-size: 14px 14px;
-      margin-top: -1px;
-    }
-
-    .receipt-body {
-      background-color: var(--paper-bg);
-      border-left: 2px dashed var(--paper-border);
-      border-right: 2px dashed var(--paper-border);
+    .depth-console-frame {
+      background-color: rgba(8, 13, 26, 0.92);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(0, 245, 212, 0.25);
+      border-radius: 12px;
       position: relative;
-      padding: 32px 24px sm:padding: 40px 36px;
-      box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.45);
+      box-shadow: 
+        inset 0 0 60px rgba(5, 8, 17, 0.85),
+        0 0 0 1px rgba(99, 102, 241, 0.15);
+      overflow: hidden;
     }
 
-    /* Side Perforation Pin Holes */
-    .receipt-body::before,
-    .receipt-body::after {
-      content: '';
+    /* Rangefinder Corner Reticles */
+    .reticle-bracket {
       position: absolute;
-      top: 0;
-      bottom: 0;
-      width: 8px;
-      background: radial-gradient(circle at 4px 12px, rgba(10, 11, 14, 0.95) 3.5px, transparent 4px);
-      background-size: 8px 24px;
+      width: 14px;
+      height: 14px;
       pointer-events: none;
+      z-index: 20;
     }
-    .receipt-body::before { left: 4px; }
-    .receipt-body::after { right: 4px; }
+    .reticle-tl { top: 6px; left: 6px; border-top: 2px solid var(--depth-mid); border-left: 2px solid var(--depth-mid); }
+    .reticle-tr { top: 6px; right: 6px; border-top: 2px solid var(--depth-mid); border-right: 2px solid var(--depth-mid); }
+    .reticle-bl { bottom: 6px; left: 6px; border-bottom: 2px solid var(--depth-mid); border-left: 2px solid var(--depth-mid); }
+    .reticle-br { bottom: 6px; right: 6px; border-bottom: 2px solid var(--depth-mid); border-right: 2px solid var(--depth-mid); }
+
+    /* Top LiDAR Sensor Telemetry Bar */
+    .lidar-status-bar {
+      background: linear-gradient(90deg, rgba(255, 51, 102, 0.15) 0%, rgba(0, 245, 212, 0.12) 50%, rgba(99, 102, 241, 0.15) 100%);
+      border-bottom: 1px solid rgba(0, 245, 212, 0.25);
+    }
+
+    /* False-Color Depth Colormap Ruler */
+    .depth-colormap-ramp {
+      height: 6px;
+      width: 100%;
+      background: linear-gradient(90deg, 
+        #ff3366 0%, 
+        #ff9f1c 25%, 
+        #00f5d4 50%, 
+        #6366f1 75%, 
+        #1e1b4b 100%
+      );
+      border-radius: 3px;
+      box-shadow: 0 0 10px rgba(0, 245, 212, 0.3);
+    }
+
+    /* Spatial Scanline Animation */
+    .scanline-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        to bottom,
+        transparent 50%,
+        rgba(0, 0, 0, 0.25) 51%
+      );
+      background-size: 100% 4px;
+      pointer-events: none;
+      opacity: 0.65;
+      z-index: 10;
+    }
 
     /* ============================================================
-       THERMAL RECEIPT TYPOGRAPHY & DIVIDERS
+       SPATIAL HUD CARDS & CONTAINERS
        ============================================================ */
-    .font-dot {
-      font-family: var(--font-dot);
-    }
-    .font-typewriter {
-      font-family: var(--font-typewriter);
-    }
-
-    .receipt-rule-double {
-      border-top: 3px double var(--paper-border-dashed);
-      margin: 12px 0;
-    }
-
-    .receipt-rule-dashed {
-      border-top: 1px dashed var(--paper-border-dashed);
-      margin: 12px 0;
-    }
-
-    .receipt-rule-dotted {
-      border-top: 2px dotted var(--paper-border-dashed);
-      margin: 10px 0;
-    }
-
-    /* Barcode simulation */
-    .barcode-line {
-      display: inline-block;
-      height: 38px;
-      background-color: var(--ink-primary);
-      margin-right: 2px;
-      vertical-align: middle;
-    }
-
-    /* Receipt Cards & Coupons */
-    .receipt-card {
-      background: var(--paper-card);
-      border: 1px dashed var(--paper-border-dashed);
-      transition: all 0.2s ease;
+    .receipt-card,
+    .depth-card {
+      background: var(--depth-card);
+      border: 1px solid var(--depth-border);
       position: relative;
-    }
-    .receipt-card:hover {
-      background: var(--paper-sub);
-      border-color: var(--ink-dim);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+      border-radius: 8px;
+      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
     }
 
-    /* Tactile Receipt Buttons */
-    .receipt-btn {
-      background: var(--paper-sub);
-      border: 1px solid var(--paper-border);
+    .receipt-card:hover,
+    .depth-card:hover {
+      background: var(--depth-card-hover);
+      border-color: rgba(0, 245, 212, 0.45);
+      transform: translateY(-2px);
+      box-shadow: 
+        0 10px 25px rgba(0, 0, 0, 0.55),
+        0 0 18px rgba(0, 245, 212, 0.15);
+    }
+
+    /* Subtle corner reticles on cards */
+    .card-reticle {
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      pointer-events: none;
+    }
+    .card-reticle-tl { top: -1px; left: -1px; border-top: 1.5px solid var(--depth-mid); border-left: 1.5px solid var(--depth-mid); }
+    .card-reticle-br { bottom: -1px; right: -1px; border-bottom: 1.5px solid var(--depth-mid); border-right: 1.5px solid var(--depth-mid); }
+
+    /* Tactile Cybernetic / HUD Buttons */
+    .receipt-btn,
+    .depth-btn {
+      background: rgba(13, 21, 39, 0.85);
+      border: 1px solid rgba(0, 245, 212, 0.3);
       color: var(--ink-primary);
-      font-family: var(--font-receipt);
+      font-family: var(--font-hud);
       font-size: 11px;
-      letter-spacing: 0.5px;
+      font-weight: 600;
+      letter-spacing: 0.75px;
       cursor: pointer;
       user-select: none;
       transition: all 0.15s ease;
-    }
-    .receipt-btn:hover {
-      background: var(--ink-primary);
-      color: #0a0b0e;
-      border-color: var(--ink-primary);
-    }
-    .receipt-btn:active {
-      transform: scale(0.98);
+      position: relative;
     }
 
-    .receipt-btn-primary {
-      background: var(--ink-primary);
-      color: #0a0b0e;
-      border: 1px solid var(--ink-primary);
-      font-weight: 700;
-      font-family: var(--font-receipt);
+    .receipt-btn:hover,
+    .depth-btn:hover {
+      background: rgba(0, 245, 212, 0.15);
+      border-color: var(--depth-mid);
+      color: #ffffff;
+      box-shadow: 0 0 12px rgba(0, 245, 212, 0.25);
     }
-    .receipt-btn-primary:hover {
+
+    .receipt-btn:active,
+    .depth-btn:active {
+      transform: scale(0.97);
+    }
+
+    .receipt-btn-primary,
+    .depth-btn-primary {
+      background: linear-gradient(135deg, var(--depth-mid) 0%, #00bbf9 100%);
+      color: #050811 !important;
+      border: 1px solid var(--depth-mid);
+      font-weight: 700;
+      font-family: var(--font-hud);
+      letter-spacing: 0.5px;
+      box-shadow: 0 0 16px rgba(0, 245, 212, 0.35);
+    }
+
+    .receipt-btn-primary:hover,
+    .depth-btn-primary:hover {
       background: #ffffff;
-      box-shadow: 0 0 14px rgba(255, 255, 255, 0.2);
+      color: #000000 !important;
+      box-shadow: 0 0 20px rgba(0, 245, 212, 0.6);
+      transform: translateY(-1px);
     }
 
-    /* Active Tab */
-    .receipt-tab-active {
-      background: var(--ink-primary) !important;
-      color: #0a0b0e !important;
+    /* Active Tab Glow */
+    .receipt-tab-active,
+    .depth-tab-active {
+      background: rgba(0, 245, 212, 0.2) !important;
+      color: var(--depth-mid) !important;
+      border-color: var(--depth-mid) !important;
+      box-shadow: 0 0 14px rgba(0, 245, 212, 0.3), inset 0 0 8px rgba(0, 245, 212, 0.15);
       font-weight: 700;
     }
 
-    /* Receipt Inputs */
-    .receipt-input {
-      background: #0d0f14;
-      border: 1px dashed var(--paper-border-dashed);
+    /* Cybernetic Inputs */
+    .receipt-input,
+    .depth-input {
+      background: #060a14;
+      border: 1px solid rgba(0, 245, 212, 0.25);
       color: var(--ink-primary);
-      font-family: var(--font-receipt);
+      font-family: var(--font-mono);
       transition: all 0.15s ease;
     }
-    .receipt-input:focus {
+
+    .receipt-input:focus,
+    .depth-input:focus {
       outline: none;
-      border-color: var(--ink-primary);
-      background: #08090c;
+      border-color: var(--depth-mid);
+      background: #080d1c;
+      box-shadow: 0 0 14px rgba(0, 245, 212, 0.25);
     }
-    .receipt-input::placeholder {
+
+    .receipt-input::placeholder,
+    .depth-input::placeholder {
       color: var(--ink-faint);
     }
 
-    /* Custom Scrollbar for Dark Receipt */
+    /* Dividers with Technical Contour Lines */
+    .receipt-rule-double,
+    .depth-rule-double {
+      border-top: 1px solid rgba(0, 245, 212, 0.25);
+      border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+      height: 3px;
+      margin: 12px 0;
+    }
+
+    .receipt-rule-dashed,
+    .depth-rule-dashed {
+      border-top: 1px dashed var(--depth-border-dashed);
+      margin: 12px 0;
+    }
+
+    .receipt-rule-dotted,
+    .depth-rule-dotted {
+      border-top: 1px dotted rgba(0, 245, 212, 0.3);
+      margin: 10px 0;
+    }
+
+    /* Custom Scrollbar for Depth Console */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--paper-bg); }
-    ::-webkit-scrollbar-thumb { background: var(--paper-border); }
-    ::-webkit-scrollbar-thumb:hover { background: var(--ink-dim); }
+    ::-webkit-scrollbar-track { background: var(--depth-void); }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--depth-mid); }
   </style>
 </head>
 <body>
 
   <!-- ============================================================
-       THE CONTINUOUS THERMAL RECEIPT SLIP
+       THE SPATIAL LIDAR TELEMETRY CONSOLE
        ============================================================ -->
-  <main class="receipt-roll px-2 sm:px-4">
+  <main class="depth-console px-2 sm:px-4">
     
-    <!-- Top Jagged Tear Edge -->
-    <div class="receipt-sawtooth-top"></div>
-
-    <!-- Main Receipt Body -->
-    <div class="receipt-body px-4 sm:px-10 py-8">
+    <div class="depth-console-frame relative">
       
-      <!-- Top Barcode & Terminal Timestamp -->
-      <div class="flex flex-col items-center justify-center text-center select-none mb-3">
-        <!-- Generative CSS Barcode Header -->
-        <div class="flex items-center justify-center overflow-hidden h-9 opacity-85 my-1">
-          <span class="barcode-line w-[2px]"></span>
-          <span class="barcode-line w-[4px]"></span>
-          <span class="barcode-line w-[1px]"></span>
-          <span class="barcode-line w-[3px]"></span>
-          <span class="barcode-line w-[5px]"></span>
-          <span class="barcode-line w-[2px]"></span>
-          <span class="barcode-line w-[1px]"></span>
-          <span class="barcode-line w-[4px]"></span>
-          <span class="barcode-line w-[2px]"></span>
-          <span class="barcode-line w-[6px]"></span>
-          <span class="barcode-line w-[1px]"></span>
-          <span class="barcode-line w-[3px]"></span>
-          <span class="barcode-line w-[4px]"></span>
-          <span class="barcode-line w-[2px]"></span>
-          <span class="barcode-line w-[1px]"></span>
-          <span class="barcode-line w-[5px]"></span>
-          <span class="barcode-line w-[3px]"></span>
-          <span class="barcode-line w-[2px]"></span>
-          <span class="barcode-line w-[4px]"></span>
-          <span class="barcode-line w-[1px]"></span>
-          <span class="barcode-line w-[3px]"></span>
-          <span class="barcode-line w-[5px]"></span>
-          <span class="barcode-line w-[2px]"></span>
-          <span class="barcode-line w-[4px]"></span>
+      <!-- Rangefinder Corner Reticles -->
+      <div class="reticle-bracket reticle-tl"></div>
+      <div class="reticle-bracket reticle-tr"></div>
+      <div class="reticle-bracket reticle-bl"></div>
+      <div class="reticle-bracket reticle-br"></div>
+      <div class="scanline-overlay"></div>
+
+      <!-- Top LiDAR Sensor Telemetry Bar -->
+      <div class="lidar-status-bar px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between text-[11px] font-mono select-none">
+        <div class="flex items-center gap-2.5">
+          <span class="w-2 h-2 rounded-full bg-[var(--depth-mid)] animate-ping"></span>
+          <span class="font-bold text-[var(--depth-mid)] tracking-wider">LIDAR TOF SENSOR ACTIVE</span>
+          <span class="text-[var(--ink-faint)] hidden sm:inline">|</span>
+          <span class="text-[var(--ink-dim)] hidden sm:inline">IR BAND: 905nm</span>
+          <span class="text-[var(--ink-faint)] hidden md:inline">|</span>
+          <span class="text-[var(--ink-dim)] hidden md:inline">FOV: 84.6° H × 65.2° V</span>
         </div>
-        <div class="font-dot text-sm tracking-[5px] text-[var(--ink-dim)]">
-          * STUVIO-TORBOX-STREAM-REG-99420 *
+        <div class="flex items-center gap-3 text-[var(--ink-dim)]">
+          <span id="spatialCoords" class="text-[var(--depth-near)] font-bold">X: +0.42 | Y: -0.18 | Z: 1.84m</span>
+          <span class="text-[var(--ink-faint)]">|</span>
+          <span class="text-[var(--ink-primary)]">120 Hz PULSE</span>
         </div>
       </div>
 
-      <!-- Receipt Store Header Block -->
-      <header class="text-center font-typewriter space-y-1 select-none">
-        <div class="font-dot text-3xl sm:text-4xl font-bold tracking-wider text-[var(--ink-primary)]">
-          * * * S T U V I O   P O S * * *
+      <!-- False-Color Depth Colormap Scale Ruler -->
+      <div class="px-4 sm:px-6 pt-2 select-none">
+        <div class="depth-colormap-ramp"></div>
+        <div class="flex justify-between items-center text-[9px] font-mono pt-1 text-[var(--ink-dim)]">
+          <span class="text-[var(--depth-coral)] font-bold">Z: 0.2m (NEAR)</span>
+          <span class="text-[var(--depth-near)] font-bold">0.8m (FOREGROUND)</span>
+          <span class="text-[var(--depth-mid)] font-bold">1.5m (FOCAL PLANE)</span>
+          <span class="text-[var(--depth-far)] font-bold">5.0m (MIDGROUND)</span>
+          <span class="text-[#a5b4fc] font-bold">∞ (ABYSSAL FAR)</span>
         </div>
-        <p class="text-xs text-[var(--ink-dim)] tracking-widest uppercase">
-          Thermal Debrid Streaming Terminal // Register #01
-        </p>
-        <p class="text-[11px] text-[var(--ink-faint)]">
-          CLOUD CACHE PROTOCOL v3.4 // DIRECT SEED PIPELINE
-        </p>
+      </div>
 
-        <div class="receipt-rule-double"></div>
-
-        <!-- Transaction Metadata Table -->
-        <div class="grid grid-cols-2 text-left text-[11px] text-[var(--ink-dim)] font-receipt gap-1 py-1">
-          <div>DATE: <span id="receiptDate" class="text-[var(--ink-primary)]">2026-09-11</span></div>
-          <div class="text-right">TIME: <span id="receiptTime" class="text-[var(--ink-primary)]">00:00:00 UTC</span></div>
-          <div>CASHIER: <span class="text-[var(--ink-primary)]">TORBOX_DAEMON</span></div>
-          <div class="text-right">REGISTER: <span class="text-[var(--ink-primary)]">POS-01 (ACTIVE)</span></div>
-          <div>SWARM CACHE: <span class="text-[var(--ink-success)] font-bold">READY (100%)</span></div>
-          <div class="text-right flex items-center justify-end gap-2 sm:gap-3">
-            <button onclick="lockRegister()" class="hover:underline text-[var(--ink-warning)] flex items-center gap-1 font-receipt" title="Lock Register Terminal">
-              <span>[LOCK 🔒]</span>
-            </button>
-            <button onclick="changeSecurityPin()" class="hover:underline text-[var(--ink-faint)] hover:text-[var(--ink-primary)] flex items-center gap-1 font-receipt" title="Change Security PIN">
-              <span>[PIN ⚙]</span>
-            </button>
-            <button onclick="toggleAudio()" class="hover:underline text-[var(--ink-primary)] flex items-center gap-1 font-receipt">
-              <span id="audioStatusDot" class="w-1.5 h-1.5 rounded-full bg-[var(--ink-success)] inline-block"></span>
-              <span id="audioLabel">AUDIO: ON</span>
-            </button>
+      <!-- Main Sensor Console Body -->
+      <div class="px-4 sm:px-8 py-5 relative z-20">
+        
+        <!-- Sensor Header & System Metadata Block -->
+        <header class="text-center space-y-1 select-none">
+          <div class="flex items-center justify-center gap-3">
+            <span class="text-[var(--depth-mid)] text-lg">◈</span>
+            <h1 class="text-3xl sm:text-4xl font-bold tracking-widest text-[var(--ink-primary)] font-hud uppercase">
+              S T U V I O <span class="text-[var(--depth-mid)]">//</span> D E P T H
+            </h1>
+            <span class="text-[var(--depth-mid)] text-lg">◈</span>
           </div>
-        </div>
 
-        <div class="receipt-rule-dashed"></div>
+          <p class="text-xs text-[var(--depth-mid)] tracking-widest uppercase font-mono">
+            VOLUMETRIC STREAMING HUD // DEBRID POINT CLOUD SENSOR #01
+          </p>
+          <p class="text-[11px] text-[var(--ink-faint)] font-mono">
+            AUTONOMOUS MP4 SEED RADAR // INSTANT DEBRID CACHE DISPATCH v4.0
+          </p>
 
-        <!-- TorBox API Key Input Slip -->
-        <div class="flex flex-col sm:flex-row items-center justify-between gap-2.5 py-1 text-xs">
-          <div class="flex items-center gap-2 w-full sm:w-auto">
-            <span class="text-[11px] text-[var(--ink-faint)] uppercase whitespace-nowrap">AUTH TOKEN:</span>
-            <div class="relative w-full sm:w-64">
-              <input 
-                id="apiKeyInput" 
-                type="password" 
-                placeholder="ENTER TORBOX API KEY..." 
-                class="receipt-input px-3 py-1.5 pr-8 rounded text-xs tracking-wider w-full"
-              />
+          <div class="depth-rule-double"></div>
+
+          <!-- Sensor Coordinates & Hardware State Table -->
+          <div class="grid grid-cols-2 text-left text-[11px] text-[var(--ink-dim)] font-mono gap-1 py-1">
+            <div>DATE: <span id="receiptDate" class="text-[var(--ink-primary)] font-bold">2026-09-13</span></div>
+            <div class="text-right">TIME: <span id="receiptTime" class="text-[var(--ink-primary)] font-bold">00:00:00 UTC</span></div>
+            <div>DAEMON: <span class="text-[var(--ink-primary)]">TORBOX_DEBRID_CORE</span></div>
+            <div class="text-right">FOCAL MATRIX: <span class="text-[var(--depth-mid)] font-bold">ACTIVE (120Hz)</span></div>
+            <div>CACHE STATUS: <span class="text-[var(--ink-success)] font-bold">READY (100% CLOUD)</span></div>
+            <div class="text-right flex items-center justify-end gap-2 sm:gap-3">
+              <button onclick="lockRegister()" class="hover:underline text-[var(--depth-near)] flex items-center gap-1 font-hud" title="Lock Security Terminal">
+                <span>[LOCK 🔒]</span>
+              </button>
+              <button onclick="changeSecurityPin()" class="hover:underline text-[var(--ink-faint)] hover:text-[var(--ink-primary)] flex items-center gap-1 font-hud" title="Change Security PIN">
+                <span>[PIN ⚙]</span>
+              </button>
+              <button onclick="toggleAudio()" class="hover:underline text-[var(--ink-primary)] flex items-center gap-1 font-hud">
+                <span id="audioStatusDot" class="w-1.5 h-1.5 rounded-full bg-[var(--ink-success)] inline-block"></span>
+                <span id="audioLabel">SONAR: ON</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="depth-rule-dashed"></div>
+
+          <!-- TorBox API Key Input Slot -->
+          <div class="flex flex-col sm:flex-row items-center justify-between gap-2.5 py-1 text-xs">
+            <div class="flex items-center gap-2 w-full sm:w-auto">
+              <span class="text-[11px] text-[var(--depth-mid)] font-mono uppercase whitespace-nowrap">AUTH TOKEN:</span>
+              <div class="relative w-full sm:w-72">
+                <input 
+                  id="apiKeyInput" 
+                  type="password" 
+                  placeholder="PASTE TORBOX API KEY..." 
+                  class="receipt-input px-3 py-1.5 pr-8 rounded text-xs tracking-wider w-full font-mono"
+                />
+                <button 
+                  type="button" 
+                  onclick="toggleApiKeyVisibility()" 
+                  id="toggleKeyVisBtn" 
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-dim)] hover:text-[var(--ink-primary)] text-xs font-mono select-none"
+                  title="Show / Hide Key"
+                >👁</button>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 w-full sm:w-auto">
               <button 
-                type="button" 
-                onclick="toggleApiKeyVisibility()" 
-                id="toggleKeyVisBtn" 
-                class="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-dim)] hover:text-[var(--ink-primary)] text-xs font-mono select-none"
-                title="Show / Hide Key"
-              >👁</button>
+                id="connectBtn" 
+                onclick="saveApiKey()" 
+                class="depth-btn px-4 py-1.5 rounded text-xs tracking-wider font-bold flex-1 sm:flex-initial active:scale-95 text-[var(--depth-mid)]"
+              >
+                [ VALIDATE &amp; SAVE ]
+              </button>
+              <button 
+                id="resetKeyBtn" 
+                onclick="resetToDefaultKey()" 
+                class="depth-btn px-3 py-1.5 rounded text-xs tracking-wider font-bold text-[var(--ink-dim)] hover:text-[var(--depth-coral)] active:scale-95"
+                title="Reset to default hardcoded key"
+              >
+                [ RESET ]
+              </button>
             </div>
           </div>
-          <div class="flex items-center gap-2 w-full sm:w-auto">
+          <div id="keyStatusBadge" class="text-[10px] text-[var(--ink-faint)] text-left pb-1 font-mono"></div>
+
+          <div class="depth-rule-dashed"></div>
+
+          <!-- Console Navigation HUD Tabs -->
+          <nav class="flex flex-wrap items-center justify-center gap-2.5 pt-1 font-hud">
             <button 
-              id="connectBtn" 
-              onclick="saveApiKey()" 
-              class="receipt-btn px-4 py-1.5 rounded text-xs tracking-wider font-bold flex-1 sm:flex-initial active:scale-95"
+              id="navDiscover" 
+              onclick="switchView('discover')" 
+              class="receipt-btn receipt-tab-active px-5 py-2 rounded text-xs tracking-wider font-bold uppercase"
             >
-              [ VALIDATE & SAVE ]
+              [ 01: DEPTH CATALOG ]
             </button>
             <button 
-              id="resetKeyBtn" 
-              onclick="resetToDefaultKey()" 
-              class="receipt-btn px-3 py-1.5 rounded text-xs tracking-wider font-bold text-[var(--ink-dim)] hover:text-[var(--ink-danger)] active:scale-95"
-              title="Reset to default hardcoded key"
+              id="navSearch" 
+              onclick="switchView('search')" 
+              class="receipt-btn px-5 py-2 rounded text-xs tracking-wider font-bold uppercase text-[var(--ink-dim)]"
             >
-              [ RESET ]
+              [ 02: SWARM RADAR ]
             </button>
-          </div>
-        </div>
-        <div id="keyStatusBadge" class="text-[10px] text-[var(--ink-faint)] text-left pb-1"></div>
+            <button 
+              id="navLibrary" 
+              onclick="switchView('library')" 
+              class="receipt-btn px-5 py-2 rounded text-xs tracking-wider font-bold uppercase text-[var(--ink-dim)]"
+            >
+              [ 03: VOLUMETRIC LEDGER ]
+            </button>
+          </nav>
 
-        <div class="receipt-rule-dashed"></div>
+          <div class="depth-rule-double"></div>
+        </header>
 
-        <!-- Register Department Navigation Buttons -->
-        <nav class="flex flex-wrap items-center justify-center gap-2 pt-1 font-receipt">
-          <button 
-            id="navDiscover" 
-            onclick="switchView('discover')" 
-            class="receipt-btn receipt-tab-active px-4 py-2 rounded text-xs tracking-wider font-bold"
-          >
-            [ 01: CATALOG MENU ]
-          </button>
-          <button 
-            id="navSearch" 
-            onclick="switchView('search')" 
-            class="receipt-btn px-4 py-2 rounded text-xs tracking-wider font-bold text-[var(--ink-dim)]"
-          >
-            [ 02: SEARCH DOCKET ]
-          </button>
-          <button 
-            id="navLibrary" 
-            onclick="switchView('library')" 
-            class="receipt-btn px-4 py-2 rounded text-xs tracking-wider font-bold text-[var(--ink-dim)]"
-          >
-            [ 03: ACCOUNT LEDGER ]
-          </button>
-        </nav>
+        <!-- ============================================================
+             VOLUMETRIC SENSOR VIEWPORT (STREAMING ROOM)
+             ============================================================ -->
+        <section id="playerSection" class="hidden flex-col gap-3 my-6 receipt-card p-4 rounded-lg border border-[var(--depth-border-glow)] shadow-2xl relative">
+          
+          <div class="card-reticle card-reticle-tl"></div>
+          <div class="card-reticle card-reticle-br"></div>
 
-        <div class="receipt-rule-double"></div>
-      </header>
-
-      <!-- ============================================================
-           SCREENING ROOM THEATRE (ADMISSION TICKET STUB)
-           ============================================================ -->
-      <section id="playerSection" class="hidden flex-col gap-3 my-6 receipt-card p-4 rounded border-2 border-dashed border-[var(--ink-dim)]">
-        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-dashed border-[var(--paper-border-dashed)] pb-2.5">
-          <div>
-            <div class="flex items-center gap-2">
-              <span class="px-2 py-0.5 rounded bg-[var(--ink-primary)] text-black font-bold text-[10px] font-receipt">ADMIT ONE // SCREENING</span>
-              <h2 id="mediaTitle" class="text-xs sm:text-sm font-bold truncate text-[var(--ink-primary)] max-w-lg">PLAYING STREAM</h2>
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-dashed border-[var(--depth-border-dashed)] pb-2.5">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded bg-[var(--depth-mid)] text-black font-bold text-[10px] font-hud tracking-wider">VOLUMETRIC SENSOR // ACTIVE</span>
+                <h2 id="mediaTitle" class="text-xs sm:text-sm font-bold truncate text-[var(--ink-primary)] max-w-lg font-hud">PLAYING STREAM</h2>
+              </div>
+              <p id="mediaSub" class="text-[11px] text-[var(--ink-dim)] mt-0.5 flex items-center gap-1.5 font-mono">
+                <span class="w-1.5 h-1.5 rounded-full bg-[var(--depth-mid)] animate-pulse"></span>
+                Direct TorBox Streaming Cache
+              </p>
             </div>
-            <p id="mediaSub" class="text-[11px] text-[var(--ink-dim)] mt-0.5 flex items-center gap-1.5">
-              <span class="w-1.5 h-1.5 rounded-full bg-[var(--ink-success)] animate-pulse"></span>
-              Direct TorBox Streaming Cache
+
+            <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              <button 
+                id="skipCandidateBtn"
+                onclick="playPaperTick(); skipToNextCandidate();" 
+                class="hidden depth-btn px-2.5 py-1 rounded text-xs tracking-wider text-[var(--depth-mid)] border-[var(--depth-mid)]/40 hover:border-[var(--depth-mid)] animate-pulse"
+                title="Skip to next torrent candidate immediately"
+              >
+                ⏭ NEXT CANDIDATE
+              </button>
+              <button 
+                id="changeReleaseBtn"
+                onclick="playPaperTick(); if (activeTargetMedia) selectRecommendation(activeTargetMedia);" 
+                class="depth-btn px-2.5 py-1 rounded text-xs tracking-wider text-[var(--depth-near)] border-[var(--depth-near)]/40 hover:border-[var(--depth-near)]"
+                title="Browse alternative releases or video formats in Swarm Radar"
+              >
+                🔍 SWARM RADAR
+              </button>
+              <button 
+                id="copyStreamBtn"
+                onclick="copyCurrentStreamUrl()" 
+                class="depth-btn px-2.5 py-1 rounded text-xs tracking-wider text-[var(--depth-mid)] border-[var(--depth-mid)]/30 hover:border-[var(--depth-mid)]"
+                title="Copy direct CDN stream URL for VLC or MPV"
+              >
+                📋 COPY VLC LINK
+              </button>
+              <a 
+                id="externalPlayBtn" 
+                href="#" 
+                target="_blank" 
+                class="depth-btn px-3 py-1 rounded text-xs tracking-wider"
+                onclick="playPaperTick()"
+              >
+                LAUNCH VLC ↗
+              </a>
+              <button 
+                onclick="playPaperTick(); closePlayer()" 
+                class="depth-btn px-2.5 py-1 rounded text-xs text-[var(--depth-coral)] border-[var(--depth-coral)]/40 hover:bg-[var(--depth-coral)]/10 tracking-wider"
+              >
+                [✕ CLOSE]
+              </button>
+            </div>
+          </div>
+
+          <!-- TorBox Swarm Ingestion Notice -->
+          <div id="ingestionNotice" class="hidden flex-col gap-2 p-3 rounded bg-[var(--depth-surface)] border border-dashed border-[var(--depth-mid)] text-xs font-mono">
+            <div class="flex items-center justify-between text-[var(--depth-mid)] font-bold">
+              <span class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-[var(--depth-mid)] animate-ping"></span>
+                <span>TORBOX SWARM INGESTION IN PROGRESS</span>
+              </span>
+              <span id="ingestionSpeed" class="text-[var(--ink-success)] font-bold font-mono">0.0 MB/s</span>
+            </div>
+            <div class="w-full bg-black/60 h-2 rounded-full overflow-hidden border border-[var(--depth-border)]">
+              <div id="ingestionProgressBar" class="bg-gradient-to-r from-[var(--depth-coral)] via-[var(--depth-near)] to-[var(--depth-mid)] h-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <div class="flex items-center justify-between text-[10px] text-[var(--ink-dim)] font-mono">
+              <span id="ingestionStatusText">DOWNLOADING TO TORBOX CLOUD CACHE...</span>
+              <span id="ingestionPercent" class="font-bold text-[var(--ink-primary)]">0%</span>
+            </div>
+            <p class="text-[10px] text-[var(--ink-faint)] italic font-mono">
+              * This release is being fetched from seed swarm into TorBox cloud storage. Video playback begins automatically as soon as 100% cached!
             </p>
           </div>
 
-          <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-            <button 
-              id="skipCandidateBtn"
-              onclick="playPaperTick(); skipToNextCandidate();" 
-              class="hidden receipt-btn px-2.5 py-1 rounded text-xs tracking-wider text-[var(--ink-accent)] border-[var(--ink-accent)]/40 hover:border-[var(--ink-accent)] animate-pulse"
-              title="Skip to next torrent candidate immediately"
-            >
-              ⏭ NEXT RELEASE
-            </button>
-            <button 
-              id="changeReleaseBtn"
-              onclick="playPaperTick(); if (activeTargetMedia) selectRecommendation(activeTargetMedia);" 
-              class="receipt-btn px-2.5 py-1 rounded text-xs tracking-wider text-[var(--ink-warning)] border-[var(--ink-warning)]/40 hover:border-[var(--ink-warning)]"
-              title="Browse alternative releases or video formats in Search Docket"
-            >
-              🔍 CHOOSE SLIP
-            </button>
-            <button 
-              id="copyStreamBtn"
-              onclick="copyCurrentStreamUrl()" 
-              class="receipt-btn px-2.5 py-1 rounded text-xs tracking-wider text-[var(--ink-accent)] border-[var(--ink-accent)]/30 hover:border-[var(--ink-accent)]"
-              title="Copy direct CDN stream URL for VLC or MPV"
-            >
-              📋 COPY VLC LINK
-            </button>
-            <a 
-              id="externalPlayBtn" 
-              href="#" 
-              target="_blank" 
-              class="receipt-btn px-3 py-1 rounded text-xs tracking-wider"
-              onclick="playPaperTick()"
-            >
-              LAUNCH VLC ↗
-            </a>
-            <button 
-              onclick="playPaperTick(); closePlayer()" 
-              class="receipt-btn px-2.5 py-1 rounded text-xs text-[var(--ink-danger)] border-[var(--ink-danger)]/40 hover:bg-[var(--ink-danger)]/10 tracking-wider"
-            >
-              [✕ VOID]
-            </button>
-          </div>
-        </div>
-
-        <!-- TorBox Swarm Ingestion Notice (Shown when torrent is downloading to TorBox) -->
-        <div id="ingestionNotice" class="hidden flex-col gap-2 p-3 rounded bg-[var(--paper-sub)] border border-dashed border-[var(--ink-accent)] text-xs font-mono">
-          <div class="flex items-center justify-between text-[var(--ink-accent)] font-bold">
-            <span class="flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full bg-[var(--ink-accent)] animate-ping"></span>
-              <span>TORBOX SWARM INGESTION IN PROGRESS</span>
-            </span>
-            <span id="ingestionSpeed" class="text-[var(--ink-success)] font-bold font-mono">0.0 MB/s</span>
-          </div>
-          <div class="w-full bg-black/60 h-2 rounded-full overflow-hidden border border-[var(--paper-border-dashed)]">
-            <div id="ingestionProgressBar" class="bg-[var(--ink-accent)] h-full transition-all duration-300" style="width: 0%"></div>
-          </div>
-          <div class="flex items-center justify-between text-[10px] text-[var(--ink-dim)] font-receipt">
-            <span id="ingestionStatusText">DOWNLOADING TO TORBOX CLOUD CACHE...</span>
-            <span id="ingestionPercent" class="font-bold text-[var(--ink-primary)]">0%</span>
-          </div>
-          <p class="text-[10px] text-[var(--ink-faint)] italic font-receipt">
-            * This release is being fetched from the seed swarm into TorBox cloud storage. Video playback will begin automatically as soon as 100% cached!
-          </p>
-        </div>
-
-        <!-- Stream Optimization & External Player Banner -->
-        <div id="codecNotice" class="hidden flex-col gap-2.5 p-3 rounded bg-[var(--paper-sub)] border border-dashed border-[var(--ink-warning)] text-xs font-mono">
-          <div class="flex items-center justify-between text-[var(--ink-warning)] font-bold">
-            <span class="flex items-center gap-2">
-              <span>⚡</span>
-              <span>PLAY IN STREMIO / VLC FOR 0% BUFFERING & FULL CODEC SUPPORT</span>
-            </span>
-            <button onclick="dismissCodecNotice()" class="text-[var(--ink-dim)] hover:text-white">[✕ DISMISS]</button>
-          </div>
-          <p class="text-[11px] text-[var(--ink-dim)] font-receipt leading-relaxed">
-            Standard browsers (Chrome/Edge) have strict licensing restrictions for multi-channel AC3/DTS audio and 10-bit MKVs. Launching directly in VLC or Stremio bypasses browser restrictions for instant hardware-accelerated playback with zero buffering:
-          </p>
-          <div class="flex flex-wrap items-center gap-2 pt-1">
-            <a id="directVlcLink" href="#" class="receipt-btn-primary px-3 py-1.5 rounded text-xs font-bold text-black flex items-center gap-1">
-              <span>▶ OPEN IN VLC APP</span>
-            </a>
-            <button onclick="copyCurrentStreamUrl()" class="receipt-btn px-3 py-1.5 rounded text-xs font-bold text-[var(--ink-accent)] flex items-center gap-1">
-              <span>📋 COPY LINK (FOR STREMIO: PASTE IN SEARCH BAR)</span>
-            </button>
-            <a id="directDownloadLink" href="#" target="_blank" download class="receipt-btn px-3 py-1.5 rounded text-xs text-[var(--ink-dim)]">
-              ⬇ DIRECT CDN FILE
-            </a>
-          </div>
-        </div>
-
-        <!-- Video Player Frame -->
-        <div class="w-full aspect-video bg-black rounded overflow-hidden border border-[var(--paper-border-dashed)] shadow-2xl relative">
-          <div id="artplayer" class="w-full h-full"></div>
-        </div>
-
-        <!-- Thermal Caption & Subtitle Control Register -->
-        <div id="captionControlSlip" class="flex flex-col gap-2.5 p-3 rounded bg-[var(--paper-sub)] border border-dashed border-[var(--paper-border-dashed)] text-xs font-mono">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-2.5 border-b border-dashed border-[var(--paper-border-dashed)] pb-2.5">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-dot text-sm text-[var(--ink-accent)] shrink-0">[CAPTIONS / SUBS]</span>
-              <select id="subtitleSelect" class="receipt-input rounded px-2.5 py-1 text-xs text-[var(--ink-primary)] font-bold max-w-xs truncate" onchange="onSubtitleSelectChange(this.value)">
-                <option value="none">CAPTIONS: OFF</option>
-              </select>
+          <!-- Stream Optimization & External Player Banner -->
+          <div id="codecNotice" class="hidden flex-col gap-2.5 p-3 rounded bg-[var(--depth-surface)] border border-dashed border-[var(--depth-near)] text-xs font-mono">
+            <div class="flex items-center justify-between text-[var(--depth-near)] font-bold">
+              <span class="flex items-center gap-2">
+                <span>⚡</span>
+                <span>PLAY IN STREMIO / VLC FOR 0% BUFFERING &amp; FULL CODEC SUPPORT</span>
+              </span>
+              <button onclick="dismissCodecNotice()" class="text-[var(--ink-dim)] hover:text-white">[✕ DISMISS]</button>
             </div>
-
-            <!-- Subtitle Sync & Font Size Tuning -->
-            <div class="flex items-center gap-2 flex-wrap">
-              <!-- Sync adjustment -->
-              <div class="flex items-center gap-1 bg-black/50 rounded px-2 py-1 border border-[var(--paper-border-dashed)]">
-                <span class="text-[10px] text-[var(--ink-faint)]">SYNC:</span>
-                <button onclick="adjustSubtitleOffset(-0.5)" title="Delay captions by -0.5s" class="hover:text-[var(--ink-primary)] px-1 font-bold">[-0.5s]</button>
-                <span id="subtitleOffsetDisplay" class="text-[10px] text-[var(--ink-warning)] w-12 text-center font-mono">0.0s</span>
-                <button onclick="adjustSubtitleOffset(0.5)" title="Advance captions by +0.5s" class="hover:text-[var(--ink-primary)] px-1 font-bold">[+0.5s]</button>
-                <button onclick="resetSubtitleOffset()" title="Reset sync offset" class="text-[9px] text-[var(--ink-dim)] hover:text-white px-1">[RST]</button>
-              </div>
-
-              <!-- Size adjustment -->
-              <div class="flex items-center gap-1 bg-black/50 rounded px-2 py-1 border border-[var(--paper-border-dashed)]">
-                <span class="text-[10px] text-[var(--ink-faint)]">SIZE:</span>
-                <button onclick="adjustSubtitleSize(-2)" title="Decrease subtitle text size" class="hover:text-[var(--ink-primary)] px-1.5 font-bold">A-</button>
-                <span id="subtitleSizeDisplay" class="text-[10px] text-[var(--ink-primary)] w-9 text-center font-mono">20px</span>
-                <button onclick="adjustSubtitleSize(2)" title="Increase subtitle text size" class="hover:text-[var(--ink-primary)] px-1.5 font-bold">A+</button>
-              </div>
-
-              <!-- Load local subtitle file -->
-              <label class="receipt-btn px-2.5 py-1 rounded text-xs text-[var(--ink-accent)] cursor-pointer hover:border-[var(--ink-accent)] flex items-center gap-1">
-                <span>📁 LOAD .SRT/.VTT</span>
-                <input type="file" id="localSubFileInput" accept=".srt,.vtt" class="hidden" onchange="handleLocalSubtitleFile(event)" />
-              </label>
-            </div>
-          </div>
-
-          <!-- OpenSubtitles Cloud Search Slip -->
-          <div class="flex items-center gap-2 pt-1 border-t border-dashed border-[var(--paper-border-dashed)] flex-wrap sm:flex-nowrap">
-            <span class="text-[10px] text-[var(--ink-faint)] shrink-0 flex items-center gap-1">
-              <span>🌐 OPENSUBTITLES CLOUD:</span>
-            </span>
-            <input 
-              id="subSearchInput" 
-              type="text" 
-              placeholder="SEARCH OPENSUBTITLES (MOVIE / SERIES TITLE OR IMDB TT...)" 
-              class="receipt-input rounded px-2.5 py-1 text-xs text-[var(--ink-primary)] flex-1 min-w-0" 
-              onkeydown="if(event.key==='Enter'){event.preventDefault();searchSubtitlesManual();}"
-            />
-            <button onclick="searchSubtitlesManual()" class="receipt-btn px-3 py-1 rounded text-xs text-[var(--ink-accent)] font-bold shrink-0 hover:border-[var(--ink-accent)] active:scale-95">
-              [ ⟳ FETCH SUBS ]
-            </button>
-          </div>
-
-          <div class="flex items-center justify-between text-[10px] text-[var(--ink-dim)] font-receipt">
-            <span id="captionStatusText">ACTIVE: NONE (SELECT A TRACK OR LOAD LOCAL SUBTITLE)</span>
-            <span id="captionSourceBadge" class="font-mono text-[var(--ink-faint)]">OPENSUBTITLES + VTT</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============================================================
-           1. DISCOVER VIEW (ITEMIZED INVENTORY MENU)
-           ============================================================ -->
-      <section id="viewDiscover" class="flex flex-col gap-4 my-4">
-        
-        <!-- Department Header & Switchers -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-dashed border-[var(--paper-border-dashed)]">
-          <div>
-            <div class="flex items-center gap-2">
-              <h2 class="font-dot text-2xl font-bold tracking-wider text-[var(--ink-primary)]">CATALOG INVENTORY</h2>
-              <span class="text-[11px] text-[var(--ink-dim)]">/DEPT-ALL</span>
-            </div>
-            <p class="text-[11px] text-[var(--ink-faint)]">Select item coupon to tear and stream directly via debrid cache</p>
-          </div>
-
-          <!-- Department Buttons -->
-          <div class="flex items-center gap-1.5 self-start sm:self-auto">
-            <button onclick="loadCatalog('movies')" id="btnFeedMovies" class="receipt-btn receipt-tab-active px-3 py-1.5 rounded text-xs tracking-wider">
-              DEPT 01: MOVIES
-            </button>
-            <button onclick="loadCatalog('series')" id="btnFeedSeries" class="receipt-btn px-3 py-1.5 rounded text-xs tracking-wider text-[var(--ink-dim)]">
-              DEPT 02: SERIES
-            </button>
-            <button onclick="loadCatalog('anime')" id="btnFeedAnime" class="receipt-btn px-3 py-1.5 rounded text-xs tracking-wider text-[var(--ink-dim)]">
-              DEPT 03: ANIME
-            </button>
-          </div>
-        </div>
-
-        <!-- Dynamic Product Coupon Cards Grid -->
-        <div id="catalogGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3.5">
-          <!-- Injected dynamically via JS -->
-        </div>
-      </section>
-
-      <!-- ============================================================
-           2. SEARCH VIEW (ORDER DOCKET & SWARM PACKING SLIPS)
-           ============================================================ -->
-      <section id="viewSearch" class="hidden flex-col gap-4 my-4">
-        
-        <!-- Active Target Order Slip Banner -->
-        <div id="targetMediaDossier" class="hidden receipt-card p-4 rounded border-2 border-dashed border-[var(--ink-primary)] flex-col sm:flex-row items-center gap-4">
-          <div class="relative w-16 sm:w-20 aspect-[2/3] shrink-0 bg-black rounded overflow-hidden border border-[var(--paper-border-dashed)] shadow">
-            <img id="targetPoster" src="" alt="Target Poster" class="w-full h-full object-cover filter contrast-110" />
-          </div>
-          <div class="flex flex-col gap-1 flex-1 min-w-0 text-center sm:text-left">
-            <div class="flex items-center justify-center sm:justify-start gap-2">
-              <span class="px-2 py-0.5 rounded text-[10px] bg-[var(--ink-primary)] text-black font-bold font-receipt">ORDER LOCKED</span>
-              <span id="targetRating" class="text-xs font-bold text-[var(--ink-warning)]"></span>
-              <span id="targetType" class="text-[10px] text-[var(--ink-faint)]"></span>
-            </div>
-            <h3 id="targetTitle" class="font-dot text-2xl font-bold truncate text-[var(--ink-primary)] leading-tight"></h3>
-            <p id="targetStatus" class="text-[11px] text-[var(--ink-dim)] font-receipt">
-              TRANSMITTING TO DEBRID PACKING SLIPS // SELECT STREAM PAYLOAD BELOW
+            <p class="text-[11px] text-[var(--ink-dim)] font-mono leading-relaxed">
+              Standard browsers (Chrome/Edge) have strict licensing restrictions for multi-channel AC3/DTS audio and 10-bit MKVs. Launching directly in VLC or Stremio bypasses browser restrictions for instant hardware-accelerated playback with zero buffering:
             </p>
+            <div class="flex flex-wrap items-center gap-2 pt-1">
+              <a id="directVlcLink" href="#" class="depth-btn-primary px-3 py-1.5 rounded text-xs font-bold text-black flex items-center gap-1">
+                <span>▶ OPEN IN VLC APP</span>
+              </a>
+              <button onclick="copyCurrentStreamUrl()" class="depth-btn px-3 py-1.5 rounded text-xs font-bold text-[var(--depth-mid)] flex items-center gap-1">
+                <span>📋 COPY LINK (FOR STREMIO: PASTE IN SEARCH BAR)</span>
+              </button>
+              <a id="directDownloadLink" href="#" target="_blank" download class="depth-btn px-3 py-1.5 rounded text-xs text-[var(--ink-dim)]">
+                ⬇ DIRECT CDN FILE
+              </a>
+            </div>
           </div>
-          <button onclick="clearTargetMedia()" class="receipt-btn text-[10px] px-3 py-1.5 rounded text-[var(--ink-dim)] hover:text-[var(--ink-danger)] border-[var(--paper-border)] self-center sm:self-start">
-            [✕ CANCEL ORDER]
-          </button>
-        </div>
 
-        <!-- Order Form Query Register -->
-        <div class="receipt-card p-4 rounded flex flex-col gap-3">
-          <div class="text-[11px] text-[var(--ink-dim)] flex items-center justify-between">
-            <span>TRANSACTION: SWARM LOOKUP QUERY</span>
-            <span class="text-[var(--ink-faint)]">PROTOCOL: DHT APICACHE</span>
+          <!-- Video Player Frame with Reticle Brackets -->
+          <div class="w-full aspect-video bg-black rounded-lg overflow-hidden border border-[var(--depth-border)] shadow-2xl relative">
+            <div id="artplayer" class="w-full h-full"></div>
           </div>
 
-          <form id="searchForm" class="flex flex-col sm:flex-row gap-2">
-            <div class="relative flex-1">
-              <span class="absolute left-3 top-2.5 text-xs text-[var(--ink-faint)] select-none">&gt;</span>
+          <!-- Spatial Caption & Audio Telemetry Register -->
+          <div id="captionControlSlip" class="flex flex-col gap-2.5 p-3 rounded bg-[var(--depth-surface)] border border-dashed border-[var(--depth-border-dashed)] text-xs font-mono">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2.5 border-b border-dashed border-[var(--depth-border-dashed)] pb-2.5">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm font-bold text-[var(--depth-mid)] shrink-0 font-hud">[CAPTIONS / SUBS]</span>
+                <select id="subtitleSelect" class="receipt-input rounded px-2.5 py-1 text-xs text-[var(--ink-primary)] font-bold max-w-xs truncate" onchange="onSubtitleSelectChange(this.value)">
+                  <option value="none">CAPTIONS: OFF</option>
+                </select>
+              </div>
+
+              <!-- Subtitle Sync & Font Size Tuning -->
+              <div class="flex items-center gap-2 flex-wrap">
+                <!-- Sync adjustment -->
+                <div class="flex items-center gap-1 bg-black/60 rounded px-2 py-1 border border-[var(--depth-border)]">
+                  <span class="text-[10px] text-[var(--ink-faint)]">SYNC:</span>
+                  <button onclick="adjustSubtitleOffset(-0.5)" title="Delay captions by -0.5s" class="hover:text-[var(--depth-mid)] px-1 font-bold">[-0.5s]</button>
+                  <span id="subtitleOffsetDisplay" class="text-[10px] text-[var(--depth-near)] w-12 text-center font-mono">0.0s</span>
+                  <button onclick="adjustSubtitleOffset(0.5)" title="Advance captions by +0.5s" class="hover:text-[var(--depth-mid)] px-1 font-bold">[+0.5s]</button>
+                  <button onclick="resetSubtitleOffset()" title="Reset sync offset" class="text-[9px] text-[var(--ink-dim)] hover:text-white px-1">[RST]</button>
+                </div>
+
+                <!-- Size adjustment -->
+                <div class="flex items-center gap-1 bg-black/60 rounded px-2 py-1 border border-[var(--depth-border)]">
+                  <span class="text-[10px] text-[var(--ink-faint)]">SIZE:</span>
+                  <button onclick="adjustSubtitleSize(-2)" title="Decrease subtitle text size" class="hover:text-[var(--depth-mid)] px-1.5 font-bold">A-</button>
+                  <span id="subtitleSizeDisplay" class="text-[10px] text-[var(--ink-primary)] w-9 text-center font-mono">20px</span>
+                  <button onclick="adjustSubtitleSize(2)" title="Increase subtitle text size" class="hover:text-[var(--depth-mid)] px-1.5 font-bold">A+</button>
+                </div>
+
+                <!-- Load local subtitle file -->
+                <label class="depth-btn px-2.5 py-1 rounded text-xs text-[var(--depth-mid)] cursor-pointer hover:border-[var(--depth-mid)] flex items-center gap-1">
+                  <span>📁 LOAD .SRT/.VTT</span>
+                  <input type="file" id="localSubFileInput" accept=".srt,.vtt" class="hidden" onchange="handleLocalSubtitleFile(event)" />
+                </label>
+              </div>
+            </div>
+
+            <!-- OpenSubtitles Cloud Search Bar -->
+            <div class="flex items-center gap-2 pt-1 border-t border-dashed border-[var(--depth-border-dashed)] flex-wrap sm:flex-nowrap">
+              <span class="text-[10px] text-[var(--depth-mid)] shrink-0 flex items-center gap-1 font-bold">
+                <span>🌐 OPENSUBTITLES CLOUD:</span>
+              </span>
               <input 
-                id="keywordInput" 
+                id="subSearchInput" 
                 type="text" 
-                placeholder="ENTER SEARCH QUERY (MOVIE, SHOW, OR ANIME)..." 
-                class="w-full receipt-input rounded pl-7 pr-3 py-2 text-xs tracking-wider"
+                placeholder="SEARCH OPENSUBTITLES (MOVIE / SHOW TITLE OR IMDB TT...)" 
+                class="receipt-input rounded px-2.5 py-1 text-xs text-[var(--ink-primary)] flex-1 min-w-0" 
+                onkeydown="if(event.key==='Enter'){event.preventDefault();searchSubtitlesManual();}"
               />
+              <button onclick="searchSubtitlesManual()" class="depth-btn px-3 py-1 rounded text-xs text-[var(--depth-mid)] font-bold shrink-0 active:scale-95">
+                [ ⟳ FETCH SUBS ]
+              </button>
             </div>
-            <button type="submit" class="receipt-btn-primary px-5 py-2 rounded text-xs tracking-wider active:scale-95">
-              [ EXECUTE DOCKET ]
+
+            <div class="flex items-center justify-between text-[10px] text-[var(--ink-dim)] font-mono">
+              <span id="captionStatusText">ACTIVE: NONE (SELECT A TRACK OR LOAD LOCAL SUBTITLE)</span>
+              <span id="captionSourceBadge" class="text-[var(--ink-faint)]">OPENSUBTITLES + VTT</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================
+             1. DISCOVER VIEW (POINT CLOUD ELEVATION GRID)
+             ============================================================ -->
+        <section id="viewDiscover" class="flex flex-col gap-4 my-4">
+          
+          <!-- Department Header & Elevation Switchers -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-dashed border-[var(--depth-border-dashed)]">
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 class="text-2xl font-bold tracking-wider text-[var(--ink-primary)] font-hud uppercase">POINT CLOUD CATALOG</h2>
+                <span class="text-[11px] text-[var(--depth-mid)] font-mono">/VOXELS-ALL</span>
+              </div>
+              <p class="text-[11px] text-[var(--ink-dim)] font-mono">Click card to instantly resolve and stream highest-seeded native MP4</p>
+            </div>
+
+            <!-- Department Buttons -->
+            <div class="flex items-center gap-1.5 self-start sm:self-auto font-hud">
+              <button onclick="loadCatalog('movies')" id="btnFeedMovies" class="receipt-btn receipt-tab-active px-3.5 py-1.5 rounded text-xs tracking-wider">
+                DEPT 01: MOVIES
+              </button>
+              <button onclick="loadCatalog('series')" id="btnFeedSeries" class="receipt-btn px-3.5 py-1.5 rounded text-xs tracking-wider text-[var(--ink-dim)]">
+                DEPT 02: SERIES
+              </button>
+              <button onclick="loadCatalog('anime')" id="btnFeedAnime" class="receipt-btn px-3.5 py-1.5 rounded text-xs tracking-wider text-[var(--ink-dim)]">
+                DEPT 03: ANIME
+              </button>
+            </div>
+          </div>
+
+          <!-- Dynamic Point Cloud Elevation Grid -->
+          <div id="catalogGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3.5">
+            <!-- Injected dynamically via JS -->
+          </div>
+        </section>
+
+        <!-- ============================================================
+             2. SEARCH VIEW (SWARM RADAR & RANGEFINDER VIEW)
+             ============================================================ -->
+        <section id="viewSearch" class="hidden flex-col gap-4 my-4">
+          
+          <!-- Active Target Radar Lock Dossier -->
+          <div id="targetMediaDossier" class="hidden receipt-card p-4 rounded-lg border border-[var(--depth-mid)] flex-col sm:flex-row items-center gap-4 relative">
+            <div class="card-reticle card-reticle-tl"></div>
+            <div class="card-reticle card-reticle-br"></div>
+            <div class="relative w-16 sm:w-20 aspect-[2/3] shrink-0 bg-black rounded overflow-hidden border border-[var(--depth-border)] shadow">
+              <img id="targetPoster" src="" alt="Target Poster" class="w-full h-full object-cover filter contrast-110" />
+            </div>
+            <div class="flex flex-col gap-1 flex-1 min-w-0 text-center sm:text-left">
+              <div class="flex items-center justify-center sm:justify-start gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] bg-[var(--depth-mid)] text-black font-bold font-hud">RADAR TARGET LOCKED</span>
+                <span id="targetRating" class="text-xs font-bold text-[var(--depth-near)]"></span>
+                <span id="targetType" class="text-[10px] text-[var(--ink-faint)] font-mono"></span>
+              </div>
+              <h3 id="targetTitle" class="text-2xl font-bold truncate text-[var(--ink-primary)] leading-tight font-hud"></h3>
+              <p id="targetStatus" class="text-[11px] text-[var(--ink-dim)] font-mono">
+                TRANSMITTING COORDINATES TO TORBOX DEBRID // SELECT CANDIDATE PACKET BELOW
+              </p>
+            </div>
+            <button onclick="clearTargetMedia()" class="depth-btn text-[10px] px-3 py-1.5 rounded text-[var(--ink-dim)] hover:text-[var(--depth-coral)] self-center sm:self-start">
+              [✕ CANCEL TARGET]
             </button>
-          </form>
+          </div>
 
-          <div class="flex flex-wrap items-center justify-between gap-3 text-xs pt-1 text-[var(--ink-dim)]">
-            <div class="flex items-center gap-2">
-              <span class="text-[10px] uppercase text-[var(--ink-faint)]">FORMAT:</span>
-              <select id="formatSelect" class="receipt-input rounded px-2.5 py-1 text-xs text-[var(--ink-success)] font-bold">
-                <option value="mp4" selected>🎬 MP4 ONLY (BROWSER NATIVE)</option>
-                <option value="all">ALL CONTAINERS (INC. MKV)</option>
-              </select>
+          <!-- Radar Query Register -->
+          <div class="receipt-card p-4 rounded-lg flex flex-col gap-3 relative">
+            <div class="card-reticle card-reticle-tl"></div>
+            <div class="card-reticle card-reticle-br"></div>
+
+            <div class="text-[11px] text-[var(--ink-dim)] flex items-center justify-between font-mono">
+              <span class="text-[var(--depth-mid)] font-bold">RADAR PIPELINE: MULTI-SWARM LOOKUP QUERY</span>
+              <span class="text-[var(--ink-faint)]">PROTOCOL: FEDERATED DHT / TORBOX</span>
             </div>
 
-            <div class="flex items-center gap-2">
-              <span class="text-[10px] uppercase text-[var(--ink-faint)]">MAX SLIPS:</span>
-              <select id="limitSelect" class="receipt-input rounded px-2 py-1 text-xs">
-                <option value="15">15 SLIPS</option>
-                <option value="25" selected>25 SLIPS</option>
-                <option value="50">50 SLIPS</option>
-              </select>
-            </div>
+            <form id="searchForm" class="flex flex-col sm:flex-row gap-2">
+              <div class="relative flex-1">
+                <span class="absolute left-3 top-2.5 text-xs text-[var(--depth-mid)] select-none font-mono">&gt;</span>
+                <input 
+                  id="keywordInput" 
+                  type="text" 
+                  placeholder="ENTER SEARCH QUERY (MOVIE, SHOW, OR ANIME)..." 
+                  class="w-full receipt-input rounded pl-7 pr-3 py-2 text-xs tracking-wider font-mono"
+                />
+              </div>
+              <button type="submit" class="depth-btn-primary px-6 py-2 rounded text-xs tracking-wider active:scale-95 uppercase font-hud font-bold">
+                [ SCAN SWARMS ]
+              </button>
+            </form>
 
-            <div class="flex items-center gap-2">
-              <span class="text-[10px] uppercase text-[var(--ink-faint)]">SORT ORDER:</span>
-              <select id="sortSelect" class="receipt-input rounded px-2.5 py-1 text-xs">
-                <option value="seeds" selected>MOST SEEDERS (▲ HIGH)</option>
-                <option value="latest_topseed">LATEST RELEASED (TOP SEED #1)</option>
-                <option value="latest">LATEST ADDED (DATE ▼)</option>
-                <option value="peers">PEERS (▼ ACTIVE)</option>
-                <option value="size_desc">PAYLOAD SIZE (HIGH)</option>
-                <option value="size_asc">PAYLOAD SIZE (LOW)</option>
-              </select>
+            <div class="flex flex-wrap items-center justify-between gap-3 text-xs pt-1 text-[var(--ink-dim)] font-mono">
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] uppercase text-[var(--ink-faint)]">FORMAT:</span>
+                <select id="formatSelect" class="receipt-input rounded px-2.5 py-1 text-xs text-[var(--depth-mid)] font-bold font-hud">
+                  <option value="mp4" selected>🎬 MP4 ONLY (BROWSER NATIVE)</option>
+                  <option value="all">ALL CONTAINERS (INC. MKV / VLC)</option>
+                </select>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] uppercase text-[var(--ink-faint)]">MAX PACKETS:</span>
+                <select id="limitSelect" class="receipt-input rounded px-2 py-1 text-xs font-mono">
+                  <option value="15">15 PACKETS</option>
+                  <option value="25" selected>25 PACKETS</option>
+                  <option value="50">50 PACKETS</option>
+                </select>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] uppercase text-[var(--ink-faint)]">SORT ORDER:</span>
+                <select id="sortSelect" class="receipt-input rounded px-2.5 py-1 text-xs font-mono">
+                  <option value="seeds" selected>MOST SEEDERS (▲ HIGH)</option>
+                  <option value="latest_topseed">LATEST RELEASED (TOP SEED #1)</option>
+                  <option value="latest">LATEST ADDED (DATE ▼)</option>
+                  <option value="peers">PEERS (▼ ACTIVE)</option>
+                  <option value="size_desc">PAYLOAD SIZE (HIGH)</option>
+                  <option value="size_asc">PAYLOAD SIZE (LOW)</option>
+                </select>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- Search Results Grid -->
-        <div id="searchResults" class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <p class="text-[var(--ink-faint)] text-xs col-span-2 text-center py-16 font-dot text-xl">
-            REGISTER IDLE. ENTER SEARCH QUERY TO PRINT TORRENT SLIPS...
-          </p>
-        </div>
-      </section>
-
-      <!-- ============================================================
-           3. CLOUD LIBRARY (ACCOUNT STATEMENT LEDGER)
-           ============================================================ -->
-      <section id="viewLibrary" class="hidden flex-col gap-4 my-4">
-        <div class="flex items-center justify-between pb-2 border-b border-dashed border-[var(--paper-border-dashed)]">
-          <div>
-            <div class="flex items-center gap-2">
-              <h2 class="font-dot text-2xl font-bold tracking-wider text-[var(--ink-primary)]">ACCOUNT LEDGER</h2>
-              <span class="text-[11px] text-[var(--ink-dim)]">/TORBOX/VOL0</span>
-            </div>
-            <p class="text-[11px] text-[var(--ink-faint)]">Itemized record of active cloud-cached torrents ready for playback</p>
+          <!-- Search Results Grid -->
+          <div id="searchResults" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <p class="text-[var(--ink-faint)] text-xs col-span-2 text-center py-16 font-mono text-base">
+              RADAR IDLE. ENTER SEARCH QUERY TO SCAN FEDERATED TORRENT SWARMS...
+            </p>
           </div>
-          <button onclick="playPaperTick(); fetchLibrary()" class="receipt-btn px-3 py-1.5 rounded text-xs tracking-wider">
-            [ ↺ REFRESH STATEMENT ]
-          </button>
-        </div>
+        </section>
 
-        <div id="libraryList" class="space-y-3">
-          <p class="text-[var(--ink-faint)] text-xs text-center py-16 font-dot text-xl">
-            SYNCHRONIZING ACCOUNT STATEMENT WITH TORBOX CLOUD...
+        <!-- ============================================================
+             3. CLOUD LIBRARY (VOLUMETRIC CACHE LEDGER)
+             ============================================================ -->
+        <section id="viewLibrary" class="hidden flex-col gap-4 my-4">
+          <div class="flex items-center justify-between pb-2 border-b border-dashed border-[var(--depth-border-dashed)]">
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 class="text-2xl font-bold tracking-wider text-[var(--ink-primary)] font-hud uppercase">VOLUMETRIC LEDGER</h2>
+                <span class="text-[11px] text-[var(--depth-mid)] font-mono">/TORBOX/VOLUMES</span>
+              </div>
+              <p class="text-[11px] text-[var(--ink-faint)] font-mono">Point cloud cache blocks registered on your TorBox debrid account</p>
+            </div>
+            <button onclick="playPaperTick(); fetchLibrary()" class="depth-btn px-3.5 py-1.5 rounded text-xs tracking-wider font-hud">
+              [ ↺ REFRESH LEDGER ]
+            </button>
+          </div>
+
+          <div id="libraryList" class="space-y-3">
+            <p class="text-[var(--ink-faint)] text-xs text-center py-16 font-mono text-base">
+              SYNCHRONIZING VOLUMETRIC CACHE BLOCKS WITH TORBOX CLOUD...
+            </p>
+          </div>
+        </section>
+
+        <!-- ============================================================
+             SPATIAL TELEMETRY FOOTER & CALIBRATION SIGNATURE
+             ============================================================ -->
+        <footer class="mt-8 pt-4 border-t border-dashed border-[var(--depth-border-dashed)] text-center font-mono text-xs text-[var(--ink-dim)] space-y-2 select-none">
+          
+          <div class="depth-rule-dotted"></div>
+
+          <div class="flex justify-between items-center text-[11px] px-2">
+            <span class="text-[var(--ink-faint)]">BANDWIDTH PIPELINE:</span>
+            <span class="text-[var(--depth-mid)] font-bold">UNLIMITED CDN / 0.00 USD</span>
+          </div>
+          <div class="flex justify-between items-center text-[11px] px-2">
+            <span class="text-[var(--ink-faint)]">TORBOX DEBRID ACCELERATOR:</span>
+            <span class="text-[var(--depth-near)] font-bold">ACTIVE / 100% CACHED</span>
+          </div>
+          <div class="flex justify-between items-center text-xs font-bold px-2 pt-1 border-t border-[var(--depth-border-dashed)] text-[var(--ink-primary)]">
+            <span class="text-[var(--ink-dim)]">SYSTEM CALIBRATION:</span>
+            <span class="text-[var(--ink-success)] font-hud">OPTIMAL (120 FPS TELEMETRY)</span>
+          </div>
+
+          <div class="depth-rule-double"></div>
+
+          <!-- Bottom Telemetry Signature -->
+          <p class="text-xs uppercase tracking-wider text-[var(--depth-mid)] font-hud pt-1">
+            STUVIO SPATIAL SENSOR HUD // 3D DEBRID DISPATCH COMPLETE
           </p>
-        </div>
-      </section>
+          <p class="text-[10px] text-[var(--ink-faint)] font-mono">
+            CALIBRATION REF: #99420-LIDAR-TOF-STREAM-VERIFIED
+          </p>
 
-      <!-- ============================================================
-           RECEIPT FOOTER & SUMMARY
-           ============================================================ -->
-      <footer class="mt-8 pt-4 border-t-2 border-dashed border-[var(--paper-border-dashed)] text-center font-typewriter text-xs text-[var(--ink-dim)] space-y-2 select-none">
-        
-        <div class="receipt-rule-dotted"></div>
+        </footer>
 
-        <div class="flex justify-between items-center text-[11px] px-2">
-          <span>SUBTOTAL (BANDWIDTH):</span>
-          <span class="font-mono text-[var(--ink-primary)]">UNLIMITED / 0.00 USD</span>
-        </div>
-        <div class="flex justify-between items-center text-[11px] px-2">
-          <span>DEBRID CACHE FEE:</span>
-          <span class="font-mono text-[var(--ink-primary)]">INCLUDED / 0.00 USD</span>
-        </div>
-        <div class="flex justify-between items-center text-xs font-bold px-2 pt-1 border-t border-[var(--paper-border-dashed)] text-[var(--ink-primary)]">
-          <span>TOTAL CHARGES:</span>
-          <span class="font-mono text-base text-[var(--ink-success)]">0.00 USD (PAID)</span>
-        </div>
+      </div> <!-- /px-4 py-5 -->
 
-        <div class="receipt-rule-double"></div>
+    </div> <!-- /depth-console-frame -->
 
-        <!-- Thank You Customer Copy Message -->
-        <p class="text-xs uppercase tracking-wider text-[var(--ink-primary)] pt-1">
-          THANK YOU FOR STREAMING WITH STUVIO!
-        </p>
-        <p class="text-[10px] text-[var(--ink-faint)]">
-          PLEASE RETAIN RECEIPT FOR YOUR PERSONAL ARCHIVE RECORDS
-        </p>
-
-        <!-- Bottom Barcode -->
-        <div class="flex items-center justify-center overflow-hidden h-8 opacity-75 my-2">
-          <span class="barcode-line w-[3px]"></span>
-          <span class="barcode-line w-[1px]"></span>
-          <span class="barcode-line w-[4px]"></span>
-          <span class="barcode-line w-[2px]"></span>
-          <span class="barcode-line w-[6px]"></span>
-          <span class="barcode-line w-[1px]"></span>
-          <span class="barcode-line w-[3px]"></span>
-          <span class="barcode-line w-[5px]"></span>
-          <span class="barcode-line w-[2px]"></span>
-          <span class="barcode-line w-[4px]"></span>
-          <span class="barcode-line w-[1px]"></span>
-          <span class="barcode-line w-[3px]"></span>
-          <span class="barcode-line w-[5px]"></span>
-          <span class="barcode-line w-[2px]"></span>
-        </div>
-        <div class="font-dot text-xs tracking-[6px] text-[var(--ink-faint)] pb-2">
-          AUTH-CODE: #99420-TBX-STREAM-DONE
-        </div>
-
-      </footer>
-
-    </div> <!-- /receipt-body -->
-
-    <!-- Bottom Jagged Tear Edge -->
-    <div class="receipt-sawtooth-bottom"></div>
-
-  </main> <!-- /receipt-roll -->
+  </main> <!-- /depth-console -->
 
   <!-- ============================================================
-       STUVIO POS SECURITY TERMINAL PIN LOCK MODAL
+       BIOMETRIC / SPATIAL SECURITY PIN AUTHORIZATION TERMINAL
        ============================================================ -->
   <div 
     id="terminalLockModal" 
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 transition-all duration-300"
   >
-    <div class="receipt-body max-w-sm w-full p-6 space-y-4 rounded-lg border border-[var(--paper-edge)] shadow-2xl relative">
-      <div class="receipt-sawtooth-top -mt-6"></div>
+    <div class="receipt-card max-w-sm w-full p-6 space-y-4 rounded-xl border border-[var(--depth-mid)] shadow-2xl relative bg-[var(--depth-surface)]">
+      
+      <div class="card-reticle card-reticle-tl"></div>
+      <div class="card-reticle card-reticle-br"></div>
 
       <div class="text-center space-y-1 select-none">
-        <div class="barcode-container flex justify-center gap-[2px] opacity-60 py-1">
-          <span class="barcode-line w-[2px]"></span>
-          <span class="barcode-line w-[4px]"></span>
-          <span class="barcode-line w-[1px]"></span>
-          <span class="barcode-line w-[3px]"></span>
-          <span class="barcode-line w-[2px]"></span>
-          <span class="barcode-line w-[5px]"></span>
-          <span class="barcode-line w-[3px]"></span>
-          <span class="barcode-line w-[1px]"></span>
-          <span class="barcode-line w-[4px]"></span>
+        <div class="flex justify-center items-center gap-2 text-[var(--depth-mid)] pb-1">
+          <span class="w-2 h-2 rounded-full bg-[var(--depth-mid)] animate-ping"></span>
+          <span class="font-mono text-[10px] tracking-widest uppercase">SPATIAL SENSOR SECURITY</span>
         </div>
-        <h2 class="font-dot text-2xl font-bold tracking-wider text-[var(--ink-primary)]">
-          * SECURITY REGISTER *
+        <h2 class="text-2xl font-bold tracking-wider text-[var(--ink-primary)] font-hud uppercase">
+          * TERMINAL LOCK *
         </h2>
-        <p class="text-xs text-[var(--ink-dim)] uppercase tracking-widest font-receipt">
-          TERMINAL LOCKED // ACCESS RESTRICTED
+        <p class="text-xs text-[var(--depth-near)] uppercase tracking-widest font-mono">
+          HARDWARE ACCESS RESTRICTED
         </p>
-        <div class="receipt-rule-double my-2"></div>
-        <p class="text-[11px] text-[var(--ink-faint)] font-mono">
+        <div class="depth-rule-double my-2"></div>
+        <p class="text-[11px] text-[var(--ink-dim)] font-mono">
           ENTER 4-TO-6 DIGIT AUTHORIZATION PIN
         </p>
       </div>
@@ -821,39 +854,37 @@
 
       <div 
         id="pinStatusMsg" 
-        class="text-center font-receipt text-xs min-h-[20px] text-[var(--ink-dim)] transition-colors duration-200"
+        class="text-center font-mono text-xs min-h-[20px] text-[var(--ink-dim)] transition-colors duration-200"
       >
         AWAITING SECURITY PIN...
       </div>
 
       <div class="grid grid-cols-3 gap-2 font-mono text-base font-bold select-none">
-        <button onclick="enterPinDigit('1')" class="receipt-btn py-3 rounded text-center active:scale-95">1</button>
-        <button onclick="enterPinDigit('2')" class="receipt-btn py-3 rounded text-center active:scale-95">2</button>
-        <button onclick="enterPinDigit('3')" class="receipt-btn py-3 rounded text-center active:scale-95">3</button>
-        <button onclick="enterPinDigit('4')" class="receipt-btn py-3 rounded text-center active:scale-95">4</button>
-        <button onclick="enterPinDigit('5')" class="receipt-btn py-3 rounded text-center active:scale-95">5</button>
-        <button onclick="enterPinDigit('6')" class="receipt-btn py-3 rounded text-center active:scale-95">6</button>
-        <button onclick="enterPinDigit('7')" class="receipt-btn py-3 rounded text-center active:scale-95">7</button>
-        <button onclick="enterPinDigit('8')" class="receipt-btn py-3 rounded text-center active:scale-95">8</button>
-        <button onclick="enterPinDigit('9')" class="receipt-btn py-3 rounded text-center active:scale-95">9</button>
-        <button onclick="clearPin()" class="receipt-btn py-3 rounded text-center text-[var(--ink-warning)] active:scale-95 text-xs">CLR</button>
-        <button onclick="enterPinDigit('0')" class="receipt-btn py-3 rounded text-center active:scale-95">0</button>
-        <button onclick="submitPin()" class="receipt-btn py-3 rounded text-center text-[var(--ink-success)] active:scale-95 text-xs">ENT</button>
+        <button onclick="enterPinDigit('1')" class="depth-btn py-3 rounded text-center active:scale-95">1</button>
+        <button onclick="enterPinDigit('2')" class="depth-btn py-3 rounded text-center active:scale-95">2</button>
+        <button onclick="enterPinDigit('3')" class="depth-btn py-3 rounded text-center active:scale-95">3</button>
+        <button onclick="enterPinDigit('4')" class="depth-btn py-3 rounded text-center active:scale-95">4</button>
+        <button onclick="enterPinDigit('5')" class="depth-btn py-3 rounded text-center active:scale-95">5</button>
+        <button onclick="enterPinDigit('6')" class="depth-btn py-3 rounded text-center active:scale-95">6</button>
+        <button onclick="enterPinDigit('7')" class="depth-btn py-3 rounded text-center active:scale-95">7</button>
+        <button onclick="enterPinDigit('8')" class="depth-btn py-3 rounded text-center active:scale-95">8</button>
+        <button onclick="enterPinDigit('9')" class="depth-btn py-3 rounded text-center active:scale-95">9</button>
+        <button onclick="clearPin()" class="depth-btn py-3 rounded text-center text-[var(--depth-coral)] active:scale-95 text-xs">CLR</button>
+        <button onclick="enterPinDigit('0')" class="depth-btn py-3 rounded text-center active:scale-95">0</button>
+        <button onclick="submitPin()" class="depth-btn py-3 rounded text-center text-[var(--depth-mid)] active:scale-95 text-xs font-bold">ENT</button>
       </div>
 
-      <div class="flex items-center justify-between pt-2 text-[11px] text-[var(--ink-dim)] font-receipt select-none">
+      <div class="flex items-center justify-between pt-2 text-[11px] text-[var(--ink-dim)] font-mono select-none">
         <label class="flex items-center gap-1.5 cursor-pointer">
-          <input type="checkbox" id="rememberPinCheckbox" class="accent-[var(--ink-primary)]" checked />
+          <input type="checkbox" id="rememberPinCheckbox" class="accent-[var(--depth-mid)]" checked />
           <span>REMEMBER THIS DEVICE</span>
         </label>
       </div>
-
-      <div class="receipt-sawtooth-bottom -mb-6"></div>
     </div>
   </div>
 
   <!-- ============================================================
-       APPLICATION LOGIC & THERMAL PRINTER AUDIO ENGINE
+       APPLICATION LOGIC & SPATIAL SONAR AUDIO SYNTHESIZER
        ============================================================ -->
   <script>
     // =========================================================================
@@ -880,7 +911,7 @@
     let activeTargetMedia = null;
 
     // ==========================================
-    // 1. Web Audio API Thermal Printer Synthesizer
+    // 1. Web Audio API Spatial Sonar & Laser Synthesizer
     // ==========================================
     const ThermalPrinterAudio = {
       ctx: null,
@@ -897,17 +928,18 @@
           this.init();
           if (!this.ctx) return;
           if (this.ctx.state === "suspended") this.ctx.resume();
+          // Spatial Sonar Ping: Clean high-frequency micro-impulse
           const osc = this.ctx.createOscillator();
           const gain = this.ctx.createGain();
-          osc.type = "triangle";
-          osc.frequency.setValueAtTime(1400, this.ctx.currentTime);
-          osc.frequency.exponentialRampToValueAtTime(300, this.ctx.currentTime + 0.02);
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(1520, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(860, this.ctx.currentTime + 0.03);
           gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.03);
           osc.connect(gain);
           gain.connect(this.ctx.destination);
           osc.start();
-          osc.stop(this.ctx.currentTime + 0.02);
+          osc.stop(this.ctx.currentTime + 0.03);
         } catch (e) {}
       },
       paperFeed() {
@@ -916,9 +948,18 @@
           this.init();
           if (!this.ctx) return;
           if (this.ctx.state === "suspended") this.ctx.resume();
-          for (let i = 0; i < 3; i++) {
-            setTimeout(() => this.tick(), i * 35);
-          }
+          // LiDAR Sweep / Scanline frequency chirp
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(680, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(1880, this.ctx.currentTime + 0.07);
+          gain.gain.setValueAtTime(0.035, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.07);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.07);
         } catch (e) {}
       },
       buzzer() {
@@ -927,17 +968,23 @@
           this.init();
           if (!this.ctx) return;
           if (this.ctx.state === "suspended") this.ctx.resume();
-          const osc = this.ctx.createOscillator();
+          // Sonar Warning Dual-Tone
+          const osc1 = this.ctx.createOscillator();
+          const osc2 = this.ctx.createOscillator();
           const gain = this.ctx.createGain();
-          osc.type = "sawtooth";
-          osc.frequency.setValueAtTime(160, this.ctx.currentTime);
-          osc.frequency.linearRampToValueAtTime(110, this.ctx.currentTime + 0.15);
-          gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.15);
-          osc.connect(gain);
+          osc1.type = "sawtooth";
+          osc2.type = "sine";
+          osc1.frequency.setValueAtTime(180, this.ctx.currentTime);
+          osc2.frequency.setValueAtTime(360, this.ctx.currentTime);
+          gain.gain.setValueAtTime(0.06, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.16);
+          osc1.connect(gain);
+          osc2.connect(gain);
           gain.connect(this.ctx.destination);
-          osc.start();
-          osc.stop(this.ctx.currentTime + 0.15);
+          osc1.start();
+          osc2.start();
+          osc1.stop(this.ctx.currentTime + 0.16);
+          osc2.stop(this.ctx.currentTime + 0.16);
         } catch (e) {}
       }
     };
@@ -958,16 +1005,16 @@
       const label = document.getElementById("audioLabel");
       if (ThermalPrinterAudio.muted) {
         dot.className = "w-1.5 h-1.5 rounded-full bg-[var(--ink-faint)] inline-block";
-        label.innerText = "AUDIO: MUTE";
+        label.innerText = "SONAR: MUTE";
       } else {
-        dot.className = "w-1.5 h-1.5 rounded-full bg-[var(--ink-success)] inline-block";
-        label.innerText = "AUDIO: ON";
+        dot.className = "w-1.5 h-1.5 rounded-full bg-[var(--depth-mid)] inline-block";
+        label.innerText = "SONAR: ON";
       }
     }
     updateAudioUI();
 
     // ==========================================
-    // 2. Receipt Timestamp Clock
+    // 2. Spatial Telemetry & Timestamp Clock
     // ==========================================
     function updateClock() {
       const now = new Date();
@@ -982,6 +1029,15 @@
       const timeEl = document.getElementById("receiptTime");
       if (dateEl) dateEl.innerText = `${yr}-${mo}-${da}`;
       if (timeEl) timeEl.innerText = `${h}:${m}:${s} UTC`;
+
+      // Subtle dynamic spatial coordinate jitter for HUD realism
+      const coordsEl = document.getElementById("spatialCoords");
+      if (coordsEl) {
+        const x = (Math.sin(now.getTime() / 3200) * 0.45).toFixed(2);
+        const y = (Math.cos(now.getTime() / 2800) * 0.25).toFixed(2);
+        const z = (1.82 + Math.sin(now.getTime() / 4000) * 0.08).toFixed(2);
+        coordsEl.innerText = `X: ${x >= 0 ? '+' : ''}${x} | Y: ${y >= 0 ? '+' : ''}${y} | Z: ${z}m`;
+      }
     }
     setInterval(updateClock, 1000);
     updateClock();
@@ -996,7 +1052,7 @@
       container.innerHTML = "";
       for (let i = 0; i < activePin.length; i++) {
         const slot = document.createElement("div");
-        slot.className = "pin-slot w-10 h-12 border border-[var(--paper-edge)] bg-[var(--paper-bg-dark)] rounded flex items-center justify-center font-mono text-xl text-[var(--ink-primary)] font-bold transition-all duration-150";
+        slot.className = "pin-slot w-10 h-12 border border-[var(--depth-border)] bg-[var(--depth-void)] rounded-lg flex items-center justify-center font-mono text-xl text-[var(--depth-mid)] font-bold transition-all duration-150";
         container.appendChild(slot);
       }
     }
@@ -1018,7 +1074,7 @@
       updatePinDisplay();
       const statusMsg = document.getElementById("pinStatusMsg");
       if (statusMsg) {
-        statusMsg.className = "text-center font-receipt text-xs min-h-[20px] text-[var(--ink-dim)]";
+        statusMsg.className = "text-center font-mono text-xs min-h-[20px] text-[var(--ink-dim)]";
         statusMsg.innerText = "AWAITING SECURITY PIN...";
       }
     }
@@ -1027,14 +1083,14 @@
       const slots = document.querySelectorAll(".pin-slot");
       slots.forEach((slot, index) => {
         if (index < currentPinInput.length) {
-          slot.innerText = "•";
-          slot.classList.add("border-[var(--ink-primary)]", "bg-[var(--paper-bg)]", "text-[var(--ink-primary)]");
+          slot.innerText = "◈";
+          slot.classList.add("border-[var(--depth-mid)]", "bg-[var(--depth-card)]", "text-[var(--depth-mid)]");
         } else if (index === currentPinInput.length) {
           slot.innerText = "_";
-          slot.classList.remove("border-[var(--ink-primary)]", "bg-[var(--paper-bg)]");
+          slot.classList.remove("border-[var(--depth-mid)]", "bg-[var(--depth-card)]");
         } else {
           slot.innerText = "";
-          slot.classList.remove("border-[var(--ink-primary)]", "bg-[var(--paper-bg)]");
+          slot.classList.remove("border-[var(--depth-mid)]", "bg-[var(--depth-card)]");
         }
       });
     }
@@ -1048,8 +1104,8 @@
       if (currentPinInput === activePin) {
         playPaperFeed();
         if (statusMsg) {
-          statusMsg.className = "text-center font-receipt text-xs min-h-[20px] text-[var(--ink-success)] font-bold";
-          statusMsg.innerText = "[✓] PIN ACCEPTED // REGISTER UNLOCKED";
+          statusMsg.className = "text-center font-mono text-xs min-h-[20px] text-[var(--depth-mid)] font-bold";
+          statusMsg.innerText = "[✓] AUTHORIZATION ACCEPTED // SENSOR UNLOCKED";
         }
         
         if (remember) {
@@ -1069,7 +1125,7 @@
       } else {
         playWarningBuzzer();
         if (statusMsg) {
-          statusMsg.className = "text-center font-receipt text-xs min-h-[20px] text-[var(--ink-danger)] font-bold animate-pulse";
+          statusMsg.className = "text-center font-mono text-xs min-h-[20px] text-[var(--depth-coral)] font-bold animate-pulse";
           statusMsg.innerText = "[!] ACCESS DENIED // INVALID PIN";
         }
         
@@ -1100,7 +1156,7 @@
       }
       const statusMsg = document.getElementById("pinStatusMsg");
       if (statusMsg) {
-        statusMsg.className = "text-center font-receipt text-xs min-h-[20px] text-[var(--ink-dim)]";
+        statusMsg.className = "text-center font-mono text-xs min-h-[20px] text-[var(--ink-dim)]";
         statusMsg.innerText = "TERMINAL LOCKED. ENTER PIN:";
       }
     }
@@ -1136,7 +1192,7 @@
       localStorage.setItem("stuvio_custom_pin", newPin.trim());
       playPaperFeed();
       renderPinSlots();
-      alert(`PIN UPDATED SUCCESSFULLY // REGISTER NOW SECURED WITH PIN: ${newPin.trim()}`);
+      alert(`PIN UPDATED SUCCESSFULLY // SENSOR TERMINAL SECURED WITH PIN: ${newPin.trim()}`);
     }
 
     window.addEventListener("keydown", (e) => {
@@ -1171,11 +1227,11 @@
       }
       if (keyStatusBadge) {
         if (storedKey) {
-          keyStatusBadge.innerHTML = `<span class="text-[var(--ink-success)] font-bold">● CUSTOM USER KEY ACTIVE</span> <button onclick="resetToDefaultKey()" class="underline hover:text-[var(--ink-primary)] ml-1">[RESTORE HARDCODED KEY]</button>`;
+          keyStatusBadge.innerHTML = `<span class="text-[var(--depth-mid)] font-bold">● CUSTOM USER KEY ACTIVE</span> <button onclick="resetToDefaultKey()" class="underline hover:text-[var(--ink-primary)] ml-1">[RESTORE HARDCODED KEY]</button>`;
         } else if (DEFAULT_CONFIG.TORBOX_API_KEY) {
           keyStatusBadge.innerHTML = `<span class="text-[var(--ink-primary)] font-bold">● HARDCODED DEFAULT KEY ACTIVE</span>`;
         } else {
-          keyStatusBadge.innerHTML = `<span class="text-[var(--ink-warning)]">○ NO KEY SAVED // PASTE TORBOX KEY OR HARDCODE IN SCRIPT</span>`;
+          keyStatusBadge.innerHTML = `<span class="text-[var(--depth-near)]">○ NO KEY CONFIGURED // PASTE TORBOX KEY IN FIELD ABOVE</span>`;
         }
       }
     }
@@ -1187,7 +1243,7 @@
         localStorage.setItem("stuvio_tb_key", apiKey);
         playPaperFeed();
         updateApiKeyStatusUI();
-        alert("TOKEN STORED // TORBOX REGISTER LINKED.");
+        alert("TOKEN STORED // TORBOX SENSOR PIPELINE LINKED.");
       } else {
         resetToDefaultKey();
       }
@@ -1214,7 +1270,7 @@
     }
 
     // ==========================================
-    // 4. Register Department Switcher
+    // 5. Console Department View Switcher
     // ==========================================
     function switchView(view) {
       playPaperTick();
@@ -1242,7 +1298,7 @@
     }
 
     // ==========================================
-    // 5. Discover Inventory Catalog
+    // 6. Discover Inventory Catalog (Point Cloud Elevation Grid)
     // ==========================================
     const catalogGrid = document.getElementById("catalogGrid");
 
@@ -1259,9 +1315,9 @@
       activeBtn.classList.remove("text-[var(--ink-dim)]");
 
       catalogGrid.innerHTML = `
-        <div class="col-span-full flex flex-col items-center justify-center py-16 gap-3 text-[var(--ink-dim)] font-dot text-lg">
-          <div class="w-6 h-6 border-2 border-[var(--ink-primary)] border-t-transparent rounded-full animate-spin"></div>
-          <span>PRINTING INVENTORY CATALOG...</span>
+        <div class="col-span-full flex flex-col items-center justify-center py-16 gap-3 text-[var(--depth-mid)] font-mono text-base">
+          <div class="w-8 h-8 border-2 border-[var(--depth-mid)] border-t-transparent rounded-full animate-spin"></div>
+          <span>CALIBRATING POINT CLOUD CATALOG...</span>
         </div>
       `;
 
@@ -1270,45 +1326,53 @@
         const items = await res.json();
 
         if (!items || !items.length) {
-          catalogGrid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--ink-dim)] py-16 font-dot text-lg">NO INVENTORY ITEMS RETURNED.</p>`;
+          catalogGrid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--ink-dim)] py-16 font-mono text-base">NO POINT CLOUD ENTRIES RETURNED.</p>`;
           return;
         }
 
         catalogGrid.innerHTML = "";
         items.forEach((item, idx) => {
           const card = document.createElement("div");
-          card.className = "receipt-card rounded p-2 flex flex-col justify-between gap-2 cursor-pointer";
+          card.className = "receipt-card rounded-lg p-2.5 flex flex-col justify-between gap-2 cursor-pointer relative group overflow-hidden border border-[var(--depth-border)] hover:border-[var(--depth-mid)]";
           card.onclick = () => { playPaperFeed(); autoPlayBestTorrent(item); };
 
           const posterUrl = item.poster || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80";
+          // Synthetic pseudo-depth reading for LiDAR aesthetic
+          const depthZ = (0.4 + ((idx * 7) % 25) / 10).toFixed(1);
 
           card.innerHTML = `
+            <div class="card-reticle card-reticle-tl"></div>
+            <div class="card-reticle card-reticle-br"></div>
+
             <div>
-              <div class="flex items-center justify-between text-[9px] text-[var(--ink-faint)] font-mono pb-1 border-b border-dashed border-[var(--paper-border-dashed)]">
-                <span>ITEM #${String(idx + 1).padStart(2, '0')}</span>
-                <span>${item.year || "N/A"}</span>
+              <div class="flex items-center justify-between text-[9px] text-[var(--ink-faint)] font-mono pb-1 border-b border-dashed border-[var(--depth-border-dashed)]">
+                <span class="text-[var(--depth-mid)] font-bold">VOXEL #${String(idx + 1).padStart(2, '0')}</span>
+                <span>Z: ${depthZ}m</span>
               </div>
 
-              <!-- Poster Ticket Frame -->
-              <div class="relative aspect-[2/3] w-full bg-black rounded overflow-hidden my-1.5 border border-[var(--paper-border-dashed)]">
-                <img src="${posterUrl}" alt="${item.title}" class="w-full h-full object-cover filter contrast-105" loading="lazy" />
-                ${item.rating ? `<span class="absolute top-1.5 right-1.5 bg-black/90 text-[var(--ink-warning)] font-dot text-xs font-bold px-1.5 py-0.5 rounded border border-[var(--paper-border-dashed)]">★ ${item.rating}</span>` : ""}
+              <!-- Poster Ticket Frame with Holographic Scanline -->
+              <div class="relative aspect-[2/3] w-full bg-black rounded overflow-hidden my-1.5 border border-[var(--depth-border)] shadow-md group-hover:border-[var(--depth-mid)] transition-colors">
+                <img src="${posterUrl}" alt="${item.title}" class="w-full h-full object-cover filter contrast-105 group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60"></div>
+                ${item.rating ? `<span class="absolute top-1.5 right-1.5 bg-black/80 backdrop-blur-sm text-[var(--depth-near)] font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-[var(--depth-near)]/40">★ ${item.rating}</span>` : ""}
+                <span class="absolute bottom-1 left-1.5 font-mono text-[9px] text-[var(--ink-dim)]">${item.year || "N/A"}</span>
               </div>
 
               <div class="pt-0.5">
-                <h4 class="text-xs font-bold truncate text-[var(--ink-primary)]" title="${item.title}">${item.title}</h4>
-                <div class="flex items-center justify-between text-[10px] text-[var(--ink-faint)] mt-0.5">
+                <h4 class="text-xs font-bold truncate text-[var(--ink-primary)] font-hud group-hover:text-[var(--depth-mid)] transition-colors" title="${item.title}">${item.title}</h4>
+                <div class="flex items-center justify-between text-[10px] text-[var(--ink-faint)] font-mono mt-0.5">
                   <span>[${item.type.toUpperCase()}]</span>
+                  <span class="text-[var(--depth-mid)]">Z-PLANE 0</span>
                 </div>
               </div>
             </div>
 
             <div class="flex flex-col gap-1 w-full pt-1">
-              <button class="btn-autoplay receipt-btn-primary w-full py-1.5 rounded text-[10px] tracking-wider uppercase font-bold active:scale-95 flex items-center justify-center gap-1">
+              <button class="btn-autoplay depth-btn-primary w-full py-1.5 rounded text-[10px] tracking-wider uppercase font-bold active:scale-95 flex items-center justify-center gap-1 font-hud">
                 <span>▶ PLAY BEST MP4</span>
               </button>
-              <button class="btn-browse text-[9px] text-[var(--ink-dim)] hover:text-white underline text-center w-full py-0.5" title="Browse and select specific swarm release manually">
-                [ 🔍 BROWSE SLIPS ]
+              <button class="btn-browse text-[9px] text-[var(--ink-dim)] hover:text-white underline text-center w-full py-0.5 font-mono" title="Browse and select specific swarm release manually">
+                [ 🔍 SWARM RADAR ]
               </button>
             </div>
           `;
@@ -1321,7 +1385,7 @@
           catalogGrid.appendChild(card);
         });
       } catch (err) {
-        catalogGrid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--ink-danger)] py-16 font-dot text-lg">FAILED TO PRINT INVENTORY.</p>`;
+        catalogGrid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--depth-coral)] py-16 font-mono text-base">FAILED TO LOAD POINT CLOUD CATALOG.</p>`;
       }
     }
 
@@ -1342,7 +1406,7 @@
     async function autoPlayBestTorrent(item) {
       playPaperFeed();
       if (!apiKey) {
-        alert("AUTHENTICATION REQUIRED:\nPlease enter your TorBox API token in the cashier deposit line at the top before streaming.");
+        alert("AUTHENTICATION REQUIRED:\nPlease enter your TorBox API token in the top input slot before streaming.");
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
@@ -1355,8 +1419,8 @@
       playerSection.classList.add("flex");
       mediaTitle.innerText = activeTargetMedia.title;
       mediaSub.innerHTML = `
-        <span class="text-[var(--ink-accent)] font-bold animate-pulse">⚡ AUTO-PLAY ENGINE:</span>
-        <span class="text-[var(--ink-primary)] font-mono"> SCANNING SWARMS FOR PLAYABLE CANDIDATES...</span>
+        <span class="text-[var(--depth-mid)] font-bold animate-pulse">⚡ AUTONOMOUS SWARM SCANNER:</span>
+        <span class="text-[var(--ink-primary)] font-mono"> LOCATING PLAYABLE MP4 POINT CLOUD CANDIDATES...</span>
       `;
       window.scrollTo({ top: 0, behavior: "smooth" });
 
@@ -1369,8 +1433,8 @@
 
         if (!candidates.length) {
           mediaSub.innerHTML = `
-            <span class="text-[var(--ink-warning)] font-bold">NO DIRECT MP4 SWARMS FOUND</span>
-            <span class="text-[var(--ink-dim)]"> // SWITCHING TO SEARCH DOCKET TO VIEW ALL SLIPS...</span>
+            <span class="text-[var(--depth-near)] font-bold">NO DIRECT MP4 SWARMS FOUND</span>
+            <span class="text-[var(--ink-dim)]"> // SWITCHING TO SWARM RADAR TO VIEW ALL CONTAINERS...</span>
           `;
           setTimeout(() => { selectRecommendation(activeTargetMedia); }, 1400);
           return;
@@ -1380,7 +1444,7 @@
         const topHashes = candidates.slice(0, 15).map(t => t.info_hash).filter(Boolean);
         if (topHashes.length) {
           mediaSub.innerHTML = `
-            <span class="text-[var(--ink-accent)] font-bold">⚡ CHECKING TORBOX CLOUD CACHE</span>
+            <span class="text-[var(--depth-mid)] font-bold">⚡ CHECKING TORBOX CLOUD CACHE</span>
             <span class="text-[var(--ink-dim)]"> (${topHashes.length} CANDIDATES)...</span>
           `;
           try {
@@ -1417,7 +1481,7 @@
         dispatchCandidate(0);
 
       } catch (err) {
-        mediaSub.innerText = `AUTO-PLAY ERROR: ${err.message}. OPENING SEARCH VIEW...`;
+        mediaSub.innerText = `AUTONOMOUS SCANNER ERROR: ${err.message}. OPENING SWARM RADAR...`;
         setTimeout(() => { selectRecommendation(activeTargetMedia); }, 1400);
       }
     }
@@ -1459,8 +1523,8 @@
         const mediaSubEl = document.getElementById("mediaSub");
         if (mediaSubEl) {
           mediaSubEl.innerHTML = `
-            <span class="text-[var(--ink-warning)] font-bold">⚠️ ${reason.toUpperCase()}</span>
-            <span class="text-[var(--ink-accent)] animate-pulse font-mono"> // AUTO-FAILOVER TO CANDIDATE ${nextIdx + 1}/${autoPlayQueue.length}...</span>
+            <span class="text-[var(--depth-near)] font-bold">⚠️ ${reason.toUpperCase()}</span>
+            <span class="text-[var(--depth-mid)] animate-pulse font-mono"> // AUTO-FAILOVER TO CANDIDATE ${nextIdx + 1}/${autoPlayQueue.length}...</span>
           `;
         }
 
@@ -1482,7 +1546,7 @@
         const mediaSubEl = document.getElementById("mediaSub");
         if (mediaSubEl) {
           mediaSubEl.innerHTML = `
-            <span class="text-[var(--ink-danger)] font-bold">ALL ${autoPlayQueue?.length || 1} STREAM CANDIDATES EXHAUSTED IN BROWSER</span>
+            <span class="text-[var(--depth-coral)] font-bold">ALL ${autoPlayQueue?.length || 1} STREAM CANDIDATES EXHAUSTED IN BROWSER</span>
             <span class="text-[var(--ink-dim)]"> // CLICK 'OPEN IN VLC' OR COPY FOR STREMIO FOR 0% BUFFER...</span>
           `;
         }
@@ -1519,10 +1583,10 @@
       const mediaSubEl = document.getElementById("mediaSub");
       if (mediaSubEl) {
         mediaSubEl.innerHTML = `
-          <span class="text-[var(--ink-accent)] font-bold">[CANDIDATE ${idx + 1}/${total}]:</span>
+          <span class="text-[var(--depth-mid)] font-bold">[CANDIDATE ${idx + 1}/${total}]:</span>
           <span class="text-[var(--ink-primary)] truncate font-mono"> ${t.name} </span>
           <span class="text-[var(--ink-success)] font-mono font-bold">[▲ ${(t.seeders || 0).toLocaleString()} SEEDS]</span>
-          ${t.is_cached ? `<span class="text-[var(--ink-accent)] font-bold">[⚡ CACHED]</span>` : ''}
+          ${t.is_cached ? `<span class="text-[var(--depth-mid)] font-bold">[⚡ CACHED]</span>` : ''}
         `;
       }
 
@@ -1534,7 +1598,7 @@
       if (autoPlayQueue && autoPlayIndex + 1 < autoPlayQueue.length) {
         triggerFailover("USER SKIPPED TO NEXT CANDIDATE");
       } else {
-        alert("End of candidate queue. Click '🔍 CHOOSE SLIP' to browse all swarms manually.");
+        alert("End of candidate queue. Click '🔍 SWARM RADAR' to browse all swarms manually.");
       }
     }
 
@@ -1586,7 +1650,7 @@
     }
 
     // ==========================================
-    // 7. Search Form & Swarm Results
+    // 7. Search Form & Swarm Radar Results
     // ==========================================
     const searchForm = document.getElementById("searchForm");
     const keywordInput = document.getElementById("keywordInput");
@@ -1607,9 +1671,9 @@
       }
 
       searchResults.innerHTML = `
-        <div class="col-span-2 flex flex-col items-center justify-center py-16 gap-3 text-[var(--ink-dim)] font-dot text-lg">
-          <div class="w-6 h-6 border-2 border-[var(--ink-primary)] border-t-transparent rounded-full animate-spin"></div>
-          <span>PRINTING MATCHING SWARM SLIPS...</span>
+        <div class="col-span-2 flex flex-col items-center justify-center py-16 gap-3 text-[var(--depth-mid)] font-mono text-base">
+          <div class="w-8 h-8 border-2 border-[var(--depth-mid)] border-t-transparent rounded-full animate-spin"></div>
+          <span>SCANNING FEDERATED TORRENT SWARMS...</span>
         </div>
       `;
 
@@ -1622,12 +1686,12 @@
           console.error("Search error returned:", searchTorrentList);
           searchResults.innerHTML = `
             <div class="col-span-2 flex flex-col items-center justify-center py-12 gap-3 text-center">
-              <span class="font-dot text-2xl text-[var(--ink-danger)]">SEARCH PIPELINE ERROR</span>
-              <p class="text-xs text-[var(--ink-dim)] max-w-md font-receipt">
+              <span class="font-hud text-2xl text-[var(--depth-coral)]">SWARM RADAR PIPELINE ERROR</span>
+              <p class="text-xs text-[var(--ink-dim)] max-w-md font-mono">
                 ${searchTorrentList?.error || "Unable to retrieve torrent index data."}
               </p>
-              <button onclick="document.getElementById('searchForm').dispatchEvent(new Event('submit'))" class="receipt-btn px-4 py-1.5 rounded text-xs font-bold mt-2">
-                [ ⟳ RETRY SEARCH ]
+              <button onclick="document.getElementById('searchForm').dispatchEvent(new Event('submit'))" class="depth-btn px-4 py-1.5 rounded text-xs font-bold mt-2 font-hud">
+                [ ⟳ RETRY SCAN ]
               </button>
             </div>
           `;
@@ -1651,7 +1715,7 @@
 
         sortAndRenderTorrents();
       } catch (err) {
-        searchResults.innerHTML = `<p class="col-span-2 text-[var(--ink-danger)] text-xs text-center py-16 font-dot text-lg">ERROR PRINTING SEARCH SLIPS.</p>`;
+        searchResults.innerHTML = `<p class="col-span-2 text-[var(--depth-coral)] text-xs text-center py-16 font-mono text-base">ERROR RETRIEVING SWARM PACKETS.</p>`;
       }
     });
 
@@ -1710,27 +1774,27 @@
         }
 
         const chipsHtml = suggestions.filter(s => s.toLowerCase() !== rawQ.toLowerCase())
-          .map(s => `<button onclick="quickSearch('${s.replace(/'/g, "\\'")}')" class="receipt-btn px-3 py-1 rounded text-xs text-[var(--ink-accent)] border-[var(--paper-border-dashed)] hover:border-[var(--ink-primary)]">[ 🔍 TRY: ${s} ]</button>`)
+          .map(s => `<button onclick="quickSearch('${s.replace(/'/g, "\\'")}')" class="depth-btn px-3 py-1 rounded text-xs text-[var(--depth-mid)] border-[var(--depth-border)] hover:border-[var(--depth-mid)] font-mono">[ 🔍 TRY: ${s} ]</button>`)
           .join(" ");
 
         searchResults.innerHTML = `
           <div class="col-span-2 flex flex-col items-center justify-center py-12 gap-3 text-center">
-            <span class="font-dot text-2xl text-[var(--ink-warning)]">
-              ${isMp4Filter ? "NO BROWSER MP4 RELEASES LOCATED" : "NO MATCHING TORRENT SLIPS LOCATED"}
+            <span class="font-hud text-2xl text-[var(--depth-near)]">
+              ${isMp4Filter ? "NO BROWSER MP4 RELEASES LOCATED" : "NO MATCHING SWARM PACKETS LOCATED"}
             </span>
-            <p class="text-xs text-[var(--ink-dim)] max-w-md font-receipt">
+            <p class="text-xs text-[var(--ink-dim)] max-w-md font-mono">
               ${hasMkvAlternative && isMp4Filter 
                 ? `Located ${searchTorrentList.length} swarms, but they are packaged in MKV/10-bit format (which buffers in browser).` 
                 : `Zero swarm packets were indexed for <span class="text-[var(--ink-primary)]">"${rawQ}"</span>.`}
             </p>
             ${hasMkvAlternative && isMp4Filter ? `
-              <button onclick="formatSelect.value='all'; sortAndRenderTorrents();" class="receipt-btn-primary px-4 py-2 rounded text-xs font-bold mt-1">
+              <button onclick="formatSelect.value='all'; sortAndRenderTorrents();" class="depth-btn-primary px-4 py-2 rounded text-xs font-bold mt-1 font-hud">
                 [ ⟳ SHOW ALL ${searchTorrentList.length} RELEASES (INC. MKV / VLC) ]
               </button>
             ` : ''}
             ${chipsHtml ? `
               <div class="flex flex-wrap items-center justify-center gap-2 pt-2">
-                <span class="text-[11px] text-[var(--ink-faint)] w-full">SUGGESTED REFINED QUERIES:</span>
+                <span class="text-[11px] text-[var(--ink-faint)] w-full font-mono">SUGGESTED REFINED RADAR QUERIES:</span>
                 ${chipsHtml}
               </div>
             ` : ''}
@@ -1742,7 +1806,6 @@
       const sort = sortSelect.value;
       
       if (sort === "latest_topseed") {
-        // Find the single torrent with the highest seeds for the #1 top spot
         let maxSeeds = -1;
         let topSeedIndex = -1;
         candidateList.forEach((t, i) => {
@@ -1756,7 +1819,6 @@
         const topItem = topSeedIndex >= 0 ? candidateList[topSeedIndex] : null;
         const remaining = candidateList.filter((_, i) => i !== topSeedIndex);
         
-        // Sort remaining items by latest release order (added timestamp descending)
         remaining.sort((a, b) => (b.added || 0) - (a.added || 0));
         candidateList = topItem ? [topItem, ...remaining] : remaining;
       } else if (sort === "seeds") {
@@ -1781,13 +1843,16 @@
         const isMp4 = t.is_mp4 !== false && isClientMp4(t.name);
         
         const card = document.createElement("div");
-        card.className = `receipt-card rounded p-3 flex flex-col sm:flex-row gap-3 border border-dashed ${isTopSeed ? 'border-[var(--ink-primary)] ring-1 ring-[var(--ink-primary)]/20' : 'border-[var(--paper-border-dashed)]'}`;
+        card.className = `receipt-card rounded-lg p-3 flex flex-col sm:flex-row gap-3 border relative ${isTopSeed ? 'border-[var(--depth-mid)] shadow-[0_0_15px_rgba(0,245,212,0.15)]' : 'border-[var(--depth-border)]'}`;
 
         const posterUrl = t.poster || activeTargetMedia?.poster || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80";
 
         card.innerHTML = `
+          <div class="card-reticle card-reticle-tl"></div>
+          <div class="card-reticle card-reticle-br"></div>
+
           <!-- Thumbnail Frame -->
-          <div class="relative w-full sm:w-20 aspect-[16/9] sm:aspect-[2/3] shrink-0 bg-black rounded overflow-hidden border border-[var(--paper-border-dashed)]">
+          <div class="relative w-full sm:w-20 aspect-[16/9] sm:aspect-[2/3] shrink-0 bg-black rounded overflow-hidden border border-[var(--depth-border)] shadow-md">
             <img 
               src="${posterUrl}" 
               alt="Thumbnail" 
@@ -1795,41 +1860,41 @@
               loading="lazy"
               onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80';"
             />
-            <span class="absolute bottom-1 right-1 font-mono text-[9px] px-1 bg-black/90 text-[var(--ink-primary)] border border-[var(--paper-border-dashed)] rounded">
+            <span class="absolute bottom-1 right-1 font-mono text-[9px] px-1 bg-black/80 backdrop-blur-sm text-[var(--depth-mid)] border border-[var(--depth-border)] rounded font-bold">
               ${(t.size / (1024 * 1024 * 1024)).toFixed(1)}G
             </span>
           </div>
 
-          <!-- Slip Details & Dispatch Button -->
+          <!-- Packet Details & Dispatch Button -->
           <div class="flex flex-col justify-between flex-1 min-w-0 gap-2">
             <div>
               <div class="flex items-start gap-1.5 flex-wrap">
-                <span class="font-dot text-sm text-[var(--ink-dim)] shrink-0">[DOCKET #${String(idx + 1).padStart(2, '0')}]</span>
-                ${isTopSeed ? `<span class="px-1.5 py-0.2 rounded bg-[var(--ink-primary)] text-black font-bold font-mono text-[9px] tracking-wider uppercase">★ TOP SEEDED #1</span>` : ''}
+                <span class="text-xs font-mono text-[var(--depth-mid)] shrink-0 font-bold">[RADAR #${String(idx + 1).padStart(2, '0')}]</span>
+                ${isTopSeed ? `<span class="px-1.5 py-0.2 rounded bg-[var(--depth-mid)] text-black font-bold font-mono text-[9px] tracking-wider uppercase">★ TOP SEEDED #1</span>` : ''}
                 <span id="cached-badge-${idx}"></span>
-                ${isMp4 ? `<span class="px-1.5 py-0.2 rounded bg-[var(--ink-accent)]/20 border border-[var(--ink-accent)] text-[var(--ink-accent)] font-bold text-[9px] font-mono tracking-wider">🎬 MP4 NATIVE</span>` : `<span class="px-1.5 py-0.2 rounded bg-[var(--ink-warning)]/20 border border-[var(--ink-warning)] text-[var(--ink-warning)] font-mono text-[9px]">📦 MKV</span>`}
-                <h4 class="text-xs font-bold leading-snug line-clamp-2 text-[var(--ink-primary)] w-full mt-0.5" title="${t.name}">
+                ${isMp4 ? `<span class="px-1.5 py-0.2 rounded bg-[var(--depth-mid)]/20 border border-[var(--depth-mid)] text-[var(--depth-mid)] font-bold text-[9px] font-mono tracking-wider">🎬 MP4 NATIVE</span>` : `<span class="px-1.5 py-0.2 rounded bg-[var(--depth-near)]/20 border border-[var(--depth-near)] text-[var(--depth-near)] font-mono text-[9px]">📦 MKV CONTAINER</span>`}
+                <h4 class="text-xs font-bold leading-snug line-clamp-2 text-[var(--ink-primary)] w-full mt-0.5 font-hud" title="${t.name}">
                   ${t.name}
                 </h4>
               </div>
 
-              <div class="flex flex-wrap items-center gap-1.5 mt-2 text-[10px]">
-                <span class="px-1.5 py-0.5 rounded bg-black/50 border border-[var(--paper-border-dashed)] font-mono text-[var(--ink-primary)]">
+              <div class="flex flex-wrap items-center gap-1.5 mt-2 text-[10px] font-mono">
+                <span class="px-1.5 py-0.5 rounded bg-black/60 border border-[var(--depth-border)] text-[var(--ink-primary)] font-bold">
                   ${(t.size / (1024 * 1024 * 1024)).toFixed(2)} GB
                 </span>
-                <span class="px-1.5 py-0.5 rounded bg-black/50 border border-[var(--paper-border-dashed)] text-[var(--ink-success)] font-bold">
+                <span class="px-1.5 py-0.5 rounded bg-black/60 border border-[var(--depth-border)] text-[var(--ink-success)] font-bold">
                   ▲ ${t.seeders.toLocaleString()} SEEDS
                 </span>
-                <span class="px-1.5 py-0.5 rounded bg-black/50 border border-[var(--paper-border-dashed)] text-[var(--ink-warning)] font-bold">
+                <span class="px-1.5 py-0.5 rounded bg-black/60 border border-[var(--depth-border)] text-[var(--depth-near)] font-bold">
                   ▼ ${t.leechers.toLocaleString()} PEERS
                 </span>
-                ${releaseDate ? `<span class="px-1.5 py-0.5 rounded bg-black/50 border border-[var(--paper-border-dashed)] text-[var(--ink-dim)] font-mono">REL: ${releaseDate}</span>` : ""}
-                ${t.imdb ? `<span class="px-1.5 py-0.5 rounded bg-black/50 border border-[var(--paper-border-dashed)] text-[var(--ink-faint)] font-mono">IMDB: ${t.imdb}</span>` : ""}
+                ${releaseDate ? `<span class="px-1.5 py-0.5 rounded bg-black/60 border border-[var(--depth-border)] text-[var(--ink-dim)]">REL: ${releaseDate}</span>` : ""}
+                ${t.imdb ? `<span class="px-1.5 py-0.5 rounded bg-black/60 border border-[var(--depth-border)] text-[var(--ink-faint)]">IMDB: ${t.imdb}</span>` : ""}
               </div>
             </div>
 
-            <button class="w-full sm:w-auto self-end receipt-btn-primary rounded px-3 py-1.5 text-xs tracking-wider active:scale-95 transition font-receipt">
-              ▶ PRINT & STREAM TO TORBOX
+            <button class="w-full sm:w-auto self-end depth-btn-primary rounded px-3 py-1.5 text-xs tracking-wider active:scale-95 transition font-hud font-bold">
+              ▶ STREAM TO TORBOX CLOUD
             </button>
           </div>
         `;
@@ -1868,7 +1933,7 @@
             if (json.data[h] || json.data[upperH]) {
               const badgeEl = document.getElementById(`cached-badge-${idx}`);
               if (badgeEl) {
-                badgeEl.innerHTML = `<span class="px-1.5 py-0.2 rounded bg-[var(--ink-success)]/20 border border-[var(--ink-success)] text-[var(--ink-success)] font-bold text-[9px] font-mono tracking-wider">⚡ INSTANT CACHE</span>`;
+                badgeEl.innerHTML = `<span class="px-1.5 py-0.2 rounded bg-[var(--ink-success)]/20 border border-[var(--ink-success)] text-[var(--ink-success)] font-bold text-[9px] font-mono tracking-wider">⚡ 100% CACHED</span>`;
               }
             }
           });
@@ -1891,7 +1956,7 @@
     }
 
     // ==========================================
-    // 7B. Subtitle / Caption Management Engine
+    // 9. Subtitle / Caption Management Engine
     // ==========================================
     let currentSubtitleOffset = 0.0;
     let currentSubtitleSize = 20;
@@ -2122,7 +2187,6 @@
         const subRes = await fetch(`/api/subtitles?${queryParams}`);
         const subData = await subRes.json();
         if (subData.success && Array.isArray(subData.subtitles) && subData.subtitles.length) {
-          // Preserve local file tracks and torrent internal tracks, replace OpenSubtitles tracks
           const localTracks = availableSubtitleTracks.filter(s => s.source === "Local" || s.source === "Torrent");
           availableSubtitleTracks = [...localTracks];
 
@@ -2305,7 +2369,7 @@
 
     async function addAndStream(magnet, name, infoHash, imdb) {
       if (!apiKey) {
-        alert("ERROR: AUTH TOKEN MISSING. ENTER TORBOX API KEY IN TOP SLIP.");
+        alert("ERROR: AUTH TOKEN MISSING. ENTER TORBOX API KEY IN TOP FIELD.");
         return;
       }
 
@@ -2315,7 +2379,7 @@
       playerSection.classList.remove("hidden");
       playerSection.classList.add("flex");
       mediaTitle.innerText = name;
-      mediaSub.innerText = "DISPATCHING MAGNET TO TORBOX CLOUD CACHE...";
+      mediaSub.innerText = "TRANSMITTING COORDINATES TO TORBOX CLOUD CACHE...";
       window.scrollTo({ top: 0, behavior: "smooth" });
 
       const ingestionNotice = document.getElementById("ingestionNotice");
@@ -2355,7 +2419,7 @@
           }
         } catch (e) {}
 
-        mediaSub.innerText = "TORRENT SUBMITTED // CHECKING SWARM CACHE STATUS...";
+        mediaSub.innerText = "SWARM REGISTERED // VERIFYING VOLUMETRIC CACHE STATUS...";
 
         // Real-time Ingestion Monitoring
         let attempts = 0;
@@ -2391,8 +2455,9 @@
                 // 100% CACHED! Launch video immediately!
                 clearAllPlaybackMonitors();
                 if (ingestionNotice) ingestionNotice.classList.add("hidden");
-                mediaSub.innerText = "TORBOX CACHE VERIFIED (100%) // STARTING STREAM PIPELINE...";
+                mediaSub.innerText = "TORBOX CACHE VERIFIED (100%) // STARTING DIRECT STREAM PIPELINE...";
 
+                const mediaExtensions = [".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v"];
                 let bestFile = null;
                 if (found.files && found.files.length) {
                   // Prioritize native MP4 files for direct in-browser playback
@@ -2437,8 +2502,8 @@
                   }
 
                   mediaSub.innerHTML = `
-                    <span class="text-[var(--ink-warning)] font-bold">TORRENT UNCACHED IN TORBOX [CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}]</span>
-                    <span class="text-[var(--ink-accent)] font-mono"> // AUTO-FAILOVER IN ${remainingSec}s...</span>
+                    <span class="text-[var(--depth-near)] font-bold">TORRENT UNCACHED IN TORBOX [CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}]</span>
+                    <span class="text-[var(--depth-mid)] font-mono"> // AUTO-FAILOVER IN ${remainingSec}s...</span>
                   `;
 
                   if (attempts >= 4) {
@@ -2467,7 +2532,7 @@
               if (isAutoPlayActive) {
                 const remainingSec = Math.max(0, (4 - attempts) * 1.5).toFixed(0);
                 mediaSub.innerHTML = `
-                  <span class="text-[var(--ink-accent)] font-bold">VERIFYING DEBRID CACHE [CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}]...</span>
+                  <span class="text-[var(--depth-mid)] font-bold">VERIFYING DEBRID CACHE [CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}]...</span>
                   <span class="text-[var(--ink-dim)] font-mono"> (POLL ${attempts}/4 // ${remainingSec}s)</span>
                 `;
                 if (attempts >= 4) {
@@ -2502,13 +2567,13 @@
     }
 
     // ==========================================
-    // 9. Account Statement / Cloud Library
+    // 10. Account Statement / Volumetric Cache Ledger
     // ==========================================
     async function fetchLibrary() {
       if (!apiKey) {
         document.getElementById("libraryList").innerHTML = `
-          <p class="text-[var(--ink-faint)] text-xs text-center py-16 font-dot text-xl">
-            API KEY NOT CONFIGURED. ENTER TORBOX KEY IN TOP SLIP.
+          <p class="text-[var(--ink-faint)] text-xs text-center py-16 font-mono text-base">
+            API KEY NOT CONFIGURED. ENTER TORBOX KEY IN TOP FIELD.
           </p>
         `;
         return;
@@ -2517,9 +2582,9 @@
       const libraryList = document.getElementById("libraryList");
       if (!libraryList.children.length || libraryList.innerText.includes("NO ACTIVE STREAM")) {
         libraryList.innerHTML = `
-          <div class="flex flex-col items-center justify-center py-16 gap-3 text-[var(--ink-dim)] font-dot text-lg">
-            <div class="w-6 h-6 border-2 border-[var(--ink-primary)] border-t-transparent rounded-full animate-spin"></div>
-            <span>PRINTING ACTIVE CLOUD ACCOUNT STATEMENT...</span>
+          <div class="flex flex-col items-center justify-center py-16 gap-3 text-[var(--depth-mid)] font-mono text-base">
+            <div class="w-8 h-8 border-2 border-[var(--depth-mid)] border-t-transparent rounded-full animate-spin"></div>
+            <span>READING TORBOX VOLUMETRIC CACHE MATRIX...</span>
           </div>
         `;
       }
@@ -2533,17 +2598,17 @@
         if (json.success && json.data) {
           renderLibrary(json.data);
         } else {
-          libraryList.innerHTML = `<p class="text-[var(--ink-danger)] text-xs text-center py-16 font-dot text-lg">${json.detail || "ERROR PRINTING STATEMENT."}</p>`;
+          libraryList.innerHTML = `<p class="text-[var(--depth-coral)] text-xs text-center py-16 font-mono text-base">${json.detail || "ERROR READING VOLUMES."}</p>`;
         }
       } catch (err) {
-        libraryList.innerHTML = `<p class="text-[var(--ink-danger)] text-xs text-center py-16 font-dot text-lg">CLOUD STATEMENT SYNC FAILED.</p>`;
+        libraryList.innerHTML = `<p class="text-[var(--depth-coral)] text-xs text-center py-16 font-mono text-base">CLOUD LEDGER SYNC FAILED.</p>`;
       }
     }
 
     function renderLibrary(torrents) {
       const libraryList = document.getElementById("libraryList");
       if (!torrents.length) {
-        libraryList.innerHTML = `<p class="text-[var(--ink-faint)] text-xs text-center py-16 font-dot text-xl">NO ACTIVE STREAM ENTRIES ON THIS ACCOUNT.</p>`;
+        libraryList.innerHTML = `<p class="text-[var(--ink-faint)] text-xs text-center py-16 font-mono text-base">NO ACTIVE CACHE VOLUMES REGISTERED ON THIS ACCOUNT.</p>`;
         return;
       }
 
@@ -2554,7 +2619,7 @@
 
       torrents.forEach((t, i) => {
         const card = document.createElement("div");
-        card.className = "receipt-card rounded p-3 text-xs flex flex-col gap-2";
+        card.className = "receipt-card rounded-lg p-3 text-xs flex flex-col gap-2 relative border border-[var(--depth-border)]";
 
         const isCached = t.download_state === "cached" || 
                          t.download_state === "completed" || 
@@ -2567,20 +2632,22 @@
         if (!isCached) hasActiveDownloading = true;
 
         const header = document.createElement("div");
-        header.className = "flex items-center justify-between gap-2 border-b border-dashed border-[var(--paper-border-dashed)] pb-1.5";
+        header.className = "flex items-center justify-between gap-2 border-b border-dashed border-[var(--depth-border-dashed)] pb-1.5";
         header.innerHTML = `
-          <div class="font-bold text-[var(--ink-primary)] truncate flex items-center gap-2 flex-1">
-            <span class="font-dot text-sm text-[var(--ink-dim)]">[VOL-${String(i+1).padStart(2,'0')}]</span>
+          <div class="card-reticle card-reticle-tl"></div>
+          <div class="card-reticle card-reticle-br"></div>
+          <div class="font-bold text-[var(--ink-primary)] truncate flex items-center gap-2 flex-1 font-hud">
+            <span class="text-sm text-[var(--depth-mid)] font-mono">[VOL-${String(i+1).padStart(2,'0')}]</span>
             <span class="truncate">${t.name}</span>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
+          <div class="flex items-center gap-2 shrink-0 font-mono">
             ${isCached ? `
               <span class="px-2 py-0.5 rounded bg-[var(--ink-success)]/20 border border-[var(--ink-success)] text-[var(--ink-success)] text-[9px] font-mono font-bold">
-                ✅ CACHED 100%
+                ✅ 100% CACHED
               </span>
             ` : `
-              <div class="flex items-center gap-1.5 font-mono text-[9px] text-[var(--ink-warning)]">
-                <span class="font-bold">⏳ DOWNLOADING ${pct}%</span>
+              <div class="flex items-center gap-1.5 text-[9px] text-[var(--depth-near)] font-bold">
+                <span>⏳ DOWNLOADING ${pct}%</span>
                 ${speedMb > 0 ? `<span class="text-[var(--ink-dim)]">(${speedMb} MB/s)</span>` : ''}
               </div>
             `}
@@ -2590,29 +2657,29 @@
 
         if (!isCached) {
           const progBar = document.createElement("div");
-          progBar.className = "w-full bg-black/50 h-1.5 rounded-full overflow-hidden border border-[var(--paper-border-dashed)]";
-          progBar.innerHTML = `<div class="bg-[var(--ink-warning)] h-full transition-all duration-300" style="width: ${Math.max(4, pct)}%"></div>`;
+          progBar.className = "w-full bg-black/60 h-1.5 rounded-full overflow-hidden border border-[var(--depth-border)]";
+          progBar.innerHTML = `<div class="bg-gradient-to-r from-[var(--depth-coral)] to-[var(--depth-near)] h-full transition-all duration-300" style="width: ${Math.max(4, pct)}%"></div>`;
           card.appendChild(progBar);
         }
 
         const fileList = document.createElement("div");
-        fileList.className = "flex flex-col gap-1 pl-2 border-l border-dashed border-[var(--paper-border-dashed)]";
+        fileList.className = "flex flex-col gap-1 pl-2 border-l border-dashed border-[var(--depth-border-dashed)]";
 
         if (t.files && t.files.length) {
           t.files.forEach(f => {
             const isMedia = mediaExtensions.some(ext => f.name.toLowerCase().endsWith(ext));
             const isMp4 = f.name.toLowerCase().endsWith(".mp4") || f.name.toLowerCase().endsWith(".m4v");
             const row = document.createElement("button");
-            row.className = `w-full text-left py-1.5 px-2 rounded flex justify-between items-center transition font-mono ${isMedia ? "receipt-btn text-[var(--ink-primary)] hover:bg-[var(--ink-primary)] hover:text-black" : "text-[var(--ink-faint)] cursor-not-allowed bg-black/30"}`;
+            row.className = `w-full text-left py-1.5 px-2 rounded flex justify-between items-center transition font-mono ${isMedia ? "depth-btn text-[var(--ink-primary)] hover:border-[var(--depth-mid)]" : "text-[var(--ink-faint)] cursor-not-allowed bg-black/30"}`;
             row.disabled = !isMedia;
             row.innerHTML = `
               <span class="truncate mr-3 flex items-center gap-1.5">
-                <span class="text-[9px]">${isMedia ? (isCached ? "▶" : "⏳") : "•"}</span>
+                <span class="text-[9px] text-[var(--depth-mid)]">${isMedia ? (isCached ? "▶" : "⏳") : "•"}</span>
                 <span class="truncate">${f.name.split("/").pop()}</span>
-                ${isMedia ? (isMp4 ? `<span class="text-[9px] text-[var(--ink-accent)] font-bold shrink-0">[🎬 MP4]</span>` : `<span class="text-[9px] text-[var(--ink-dim)] shrink-0">[MKV]</span>`) : ''}
+                ${isMedia ? (isMp4 ? `<span class="text-[9px] text-[var(--depth-mid)] font-bold shrink-0">[🎬 MP4]</span>` : `<span class="text-[9px] text-[var(--ink-dim)] shrink-0">[MKV]</span>`) : ''}
               </span>
               <div class="shrink-0 flex items-center gap-2">
-                ${!isCached ? `<span class="text-[9px] text-[var(--ink-warning)] font-bold">[${pct}%]</span>` : ''}
+                ${!isCached ? `<span class="text-[9px] text-[var(--depth-near)] font-bold">[${pct}%]</span>` : ''}
                 <span class="text-[10px] text-[var(--ink-dim)]">${(f.size / (1024 * 1024)).toFixed(0)} MB</span>
               </div>
             `;
@@ -2656,13 +2723,13 @@
     }
 
     // ==========================================
-    // 10. Artplayer Launcher & Continuous Playback Watchdog
+    // 11. Artplayer Launcher & Continuous Playback Watchdog
     // ==========================================
     async function playFile(torrentId, fileId, fileName, imdbId) {
       playerSection.classList.remove("hidden");
       playerSection.classList.add("flex");
       mediaTitle.innerText = fileName.split("/").pop();
-      mediaSub.innerText = "REQUESTING DIRECT CLOUD STREAMING PIPELINE...";
+      mediaSub.innerText = "CALIBRATING DIRECT CLOUD STREAMING PIPELINE...";
       window.scrollTo({ top: 0, behavior: "smooth" });
 
       const codecNotice = document.getElementById("codecNotice");
@@ -2723,7 +2790,7 @@
           setting: true,
           pip: true,
           fullscreen: true,
-          theme: "#38bdf8",
+          theme: "#00f5d4",
           subtitle: {
             url: "",
             type: "vtt",
@@ -2739,7 +2806,7 @@
           controls: [
             {
               position: "right",
-              html: '<button style="background:transparent;border:none;color:#f1f4f9;font-weight:bold;font-size:12px;cursor:pointer;padding:0 6px;" title="Toggle Capt">[CC]</button>',
+              html: '<button style="background:transparent;border:none;color:#00f5d4;font-weight:bold;font-size:12px;cursor:pointer;padding:0 6px;font-family:sans-serif;" title="Toggle Captions">[CC]</button>',
               tooltip: "Toggle Captions",
               click: function() {
                 toggleSubtitles();
@@ -2765,7 +2832,7 @@
         currentImdbId = imdbId || activeImdbId || activeTargetMedia?.id || activeTargetMedia?.imdb || null;
         discoverSubtitles(torrentId, fileName, currentImdbId);
 
-        mediaSub.innerText = "BUFFERING DEBRID STREAM FROM TORBOX CDN...";
+        mediaSub.innerText = "BUFFERING DIRECT DEBRID STREAM FROM TORBOX CDN...";
 
         // Continuous Playback Watchdog Engine
         let elapsedSeconds = 0;
@@ -2823,7 +2890,7 @@
               if (notice) notice.classList.add("hidden");
               mediaSub.innerHTML = `
                 <span class="text-[var(--ink-success)] font-bold">STREAMING DIRECT DEBRID CDN</span>
-                <span class="text-[var(--ink-dim)] font-mono"> // PLAYBACK VERIFIED (0% BUFFER)</span>
+                <span class="text-[var(--depth-mid)] font-mono"> // PLAYBACK VERIFIED (0% BUFFER)</span>
               `;
             }
           } else {
@@ -2842,12 +2909,12 @@
             const remaining = Math.max(0, 10 - elapsedSeconds);
             if (isAutoPlayActive && autoPlayQueue && autoPlayIndex + 1 < autoPlayQueue.length) {
               mediaSub.innerHTML = `
-                <span class="text-[var(--ink-warning)] font-bold">BUFFERING CDN STREAM [CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}]</span>
-                <span class="text-[var(--ink-accent)] font-mono"> // AUTO-FAILOVER IN ${remaining}s...</span>
+                <span class="text-[var(--depth-near)] font-bold">BUFFERING CDN STREAM [CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}]</span>
+                <span class="text-[var(--depth-mid)] font-mono"> // AUTO-FAILOVER IN ${remaining}s...</span>
               `;
             } else {
               mediaSub.innerHTML = `
-                <span class="text-[var(--ink-warning)] font-bold">BUFFERING CDN STREAM...</span>
+                <span class="text-[var(--depth-near)] font-bold">BUFFERING CDN STREAM...</span>
                 <span class="text-[var(--ink-dim)] font-mono"> [${elapsedSeconds}s]</span>
               `;
             }
@@ -2862,8 +2929,8 @@
               const stallRemaining = Math.max(0, 8 - consecutiveStallSeconds);
               if (isAutoPlayActive && autoPlayQueue && autoPlayIndex + 1 < autoPlayQueue.length) {
                 mediaSub.innerHTML = `
-                  <span class="text-[var(--ink-warning)] font-bold">STREAM BUFFERING [STALLED ${consecutiveStallSeconds}s]</span>
-                  <span class="text-[var(--ink-accent)] font-mono"> // AUTO-FAILOVER IN ${stallRemaining}s...</span>
+                  <span class="text-[var(--depth-near)] font-bold">STREAM BUFFERING [STALLED ${consecutiveStallSeconds}s]</span>
+                  <span class="text-[var(--depth-mid)] font-mono"> // AUTO-FAILOVER IN ${stallRemaining}s...</span>
                 `;
               }
             }
