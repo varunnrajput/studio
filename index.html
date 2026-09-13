@@ -2151,7 +2151,8 @@
       playPaperFeed();
       if (!apiKey) {
         alert("AUTHENTICATION REQUIRED:\nPlease enter your TorBox API token in the top input slot before streaming.");
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        const keyInput = document.getElementById("apiKeyInput");
+        if (keyInput) keyInput.focus();
         return;
       }
       autoPlayBestTorrent(
@@ -2822,11 +2823,68 @@
     const mediaSub = document.getElementById("mediaSub");
     const externalPlayBtn = document.getElementById("externalPlayBtn");
 
+    function scrollPlayerIntoView() {
+      if (document.fullscreenElement) return;
+      const player = document.getElementById("playerSection");
+      if (!player) return;
+      const rect = player.getBoundingClientRect();
+      // If player top is already comfortably visible in viewport, don't jerk the viewport
+      if (rect.top >= 0 && rect.top <= 140 && rect.bottom > 200) {
+        return;
+      }
+      player.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    let isCleaningUpPlayer = false;
+
+    function destroyCurrentPlayer() {
+      clearAllPlaybackMonitors();
+      isCleaningUpPlayer = true;
+
+      try {
+        if (art) {
+          if (art.hls) {
+            try { art.hls.destroy(); } catch (e) {}
+            art.hls = null;
+          }
+          if (art.video) {
+            try {
+              art.video.pause();
+              art.video.removeAttribute("src");
+              art.video.load();
+            } catch (e) {}
+          }
+          try { art.destroy(true); } catch (e) {}
+          art = null;
+        }
+      } catch (e) {
+        console.warn("[Stuvio] Error destroying Artplayer:", e);
+      }
+
+      // Hard wipe all lingering native video elements inside the container
+      const container = document.getElementById("artplayer");
+      if (container) {
+        const videos = container.querySelectorAll("video");
+        videos.forEach(v => {
+          try {
+            v.pause();
+            v.removeAttribute("src");
+            v.load();
+            v.remove();
+          } catch (e) {}
+        });
+        container.innerHTML = "";
+      }
+
+      isCleaningUpPlayer = false;
+    }
+
     async function autoPlayBestTorrent(item, season = null, episode = null, epTitle = null, initialSeek = 0) {
       playPaperFeed();
       if (!apiKey) {
         alert("AUTHENTICATION REQUIRED:\nPlease enter your TorBox API token in the top input slot before streaming.");
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        const keyInput = document.getElementById("apiKeyInput");
+        if (keyInput) keyInput.focus();
         return;
       }
 
@@ -2854,14 +2912,14 @@
 
       isAutoPlayActive = true;
 
-      // 1. Reveal player area immediately & scroll up
+      // 1. Reveal player area immediately & scroll player smoothly into view
       playerSection.classList.remove("hidden");
       playerSection.classList.add("flex");
       mediaSub.innerHTML = `
         <span class="text-[var(--depth-mid)] font-bold animate-pulse">⚡ AUTONOMOUS SWARM SCANNER:</span>
         <span class="text-[var(--ink-primary)] font-mono"> LOCATING PLAYABLE MP4 POINT CLOUD CANDIDATES...</span>
       `;
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollPlayerIntoView();
 
       try {
         // 2. Fetch top MP4 torrents (pre-sorted by seeds descending by server)
@@ -2946,7 +3004,7 @@
     }
 
     function triggerFailover(reason) {
-      if (isFailoverInProgress) return;
+      if (isFailoverInProgress || isCleaningUpPlayer) return;
 
       clearAllPlaybackMonitors();
 
@@ -2957,11 +3015,8 @@
         const nextIdx = autoPlayIndex + 1;
         const nextCandidate = autoPlayQueue[nextIdx];
 
-        // Clean up previous artplayer instance to stop audio/network immediately
-        if (art) {
-          try { art.destroy(); } catch (e) {}
-          art = null;
-        }
+        // Clean up previous player completely to stop ghost background audio/video
+        destroyCurrentPlayer();
 
         const mediaSubEl = document.getElementById("mediaSub");
         if (mediaSubEl) {
@@ -2974,9 +3029,10 @@
         setTimeout(() => {
           isFailoverInProgress = false;
           dispatchCandidate(nextIdx);
-        }, 1000);
+        }, 1200);
       } else {
         isAutoPlayActive = false;
+        destroyCurrentPlayer();
         const skipBtn = document.getElementById("skipCandidateBtn");
         if (skipBtn) skipBtn.classList.add("hidden");
 
@@ -3015,10 +3071,7 @@
         skipBtn.innerText = `⏭ NEXT (${idx + 1}/${total})`;
       }
 
-      if (art) {
-        try { art.destroy(); } catch (e) {}
-        art = null;
-      }
+      destroyCurrentPlayer();
 
       const codecNotice = document.getElementById("codecNotice");
       if (codecNotice) codecNotice.classList.add("hidden");
@@ -3855,7 +3908,7 @@
       playerSection.classList.add("flex");
       mediaTitle.innerText = name;
       mediaSub.innerText = "TRANSMITTING COORDINATES TO TORBOX CLOUD CACHE...";
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollPlayerIntoView();
 
       const ingestionNotice = document.getElementById("ingestionNotice");
       const codecNotice = document.getElementById("codecNotice");
@@ -3906,7 +3959,7 @@
             });
             const listJson = await listRes.json();
             if (!listJson.success || !Array.isArray(listJson.data)) {
-              if (isAutoPlayActive && attempts >= 4) {
+              if (isAutoPlayActive && attempts >= 10) {
                 triggerFailover("TORBOX ACCOUNT SYNC FAILED");
                 return;
               }
@@ -3961,7 +4014,8 @@
               } else {
                 // Torrent is NOT cached (it is currently downloading in TorBox)
                 if (isAutoPlayActive) {
-                  const remainingAttempts = Math.max(0, 4 - attempts);
+                  const maxAttempts = 10;
+                  const remainingAttempts = Math.max(0, maxAttempts - attempts);
                   const remainingSec = (remainingAttempts * 1.5).toFixed(0);
 
                   if (ingestionNotice) {
@@ -3981,7 +4035,7 @@
                     <span class="text-[var(--depth-mid)] font-mono"> // AUTO-FAILOVER IN ${remainingSec}s...</span>
                   `;
 
-                  if (attempts >= 4) {
+                  if (attempts >= maxAttempts) {
                     triggerFailover(`TORRENT NOT CACHED IN TORBOX (CANDIDATE ${autoPlayIndex + 1})`);
                     return;
                   }
@@ -4005,12 +4059,13 @@
             } else {
               // Not found yet in mylist
               if (isAutoPlayActive) {
-                const remainingSec = Math.max(0, (4 - attempts) * 1.5).toFixed(0);
+                const maxAttempts = 10;
+                const remainingSec = Math.max(0, (maxAttempts - attempts) * 1.5).toFixed(0);
                 mediaSub.innerHTML = `
                   <span class="text-[var(--depth-mid)] font-bold">VERIFYING DEBRID CACHE [CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}]...</span>
-                  <span class="text-[var(--ink-dim)] font-mono"> (POLL ${attempts}/4 // ${remainingSec}s)</span>
+                  <span class="text-[var(--ink-dim)] font-mono"> (POLL ${attempts}/${maxAttempts} // ${remainingSec}s)</span>
                 `;
-                if (attempts >= 4) {
+                if (attempts >= maxAttempts) {
                   triggerFailover(`TORRENT NOT LOCATED IN TORBOX (CANDIDATE ${autoPlayIndex + 1})`);
                   return;
                 }
@@ -4211,7 +4266,7 @@
         mediaTitle.innerText = fileName.split("/").pop();
       }
       mediaSub.innerText = "CALIBRATING DIRECT CLOUD STREAMING PIPELINE...";
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollPlayerIntoView();
 
       const codecNotice = document.getElementById("codecNotice");
       if (codecNotice) codecNotice.classList.add("hidden");
@@ -4251,10 +4306,7 @@
         currentStreamUrl = resolvedUrl;
         updateExternalPlayerLinks(currentStreamUrl, fileName);
 
-        if (art) {
-          try { art.destroy(); } catch (e) {}
-          art = null;
-        }
+        destroyCurrentPlayer();
 
         const isM3u8 = currentStreamUrl.includes(".m3u8");
 
@@ -4362,31 +4414,44 @@
         let lastCurrentTime = -1;
         let hasPlaybackStarted = false;
 
-        // Reset stall counts on user seeking
+        // Reset stall counts on user seeking or play state changes
         art.on("video:seeking", () => {
           consecutiveStallSeconds = 0;
         });
         art.on("video:seeked", () => {
           consecutiveStallSeconds = 0;
         });
-
-        // Error Handlers for codec / format / network rejections
-        art.on("video:error", (e) => {
-          console.warn("[Artplayer] video:error event:", e);
-          triggerFailover(`CODEC / DECODE RESTRICTION ON CANDIDATE ${autoPlayIndex + 1}`);
+        art.on("video:play", () => {
+          consecutiveStallSeconds = 0;
+        });
+        art.on("video:playing", () => {
+          hasPlaybackStarted = true;
+          consecutiveStallSeconds = 0;
+          const notice = document.getElementById("codecNotice");
+          if (notice) notice.classList.add("hidden");
+          mediaSub.innerHTML = `
+            <span class="text-[var(--ink-success)] font-bold">STREAMING DIRECT DEBRID CDN</span>
+            <span class="text-[var(--depth-mid)] font-mono"> // PLAYBACK VERIFIED (0% BUFFER)</span>
+          `;
+        });
+        art.on("video:timeupdate", () => {
+          if (art && art.currentTime > 0.3) {
+            hasPlaybackStarted = true;
+          }
         });
 
-        art.on("error", (e) => {
-          console.warn("[Artplayer] player error event:", e);
-          triggerFailover(`STREAM PLAYBACK ERROR ON CANDIDATE ${autoPlayIndex + 1}`);
-        });
+        // Error Handlers for real codec / format / network rejections (ignores benign MEDIA_ERR_ABORTED)
+        const onPlaybackError = (e, src) => {
+          if (isCleaningUpPlayer || isFailoverInProgress || !isAutoPlayActive) return;
+          const code = art?.video?.error?.code;
+          // Code 1 is MEDIA_ERR_ABORTED - normal during stream switch / pause / destroy
+          if (code === 1) return;
+          console.warn(`[Artplayer] Playback error (${src}, code: ${code}):`, e);
+          triggerFailover(`STREAM PLAYBACK ERROR (CODE ${code || 'ERR'}) ON CANDIDATE ${autoPlayIndex + 1}`);
+        };
 
-        if (art.video) {
-          art.video.addEventListener("error", (e) => {
-            console.warn("[NativeVideo] error event:", e);
-            triggerFailover(`NATIVE VIDEO ERROR ON CANDIDATE ${autoPlayIndex + 1}`);
-          });
-        }
+        art.on("video:error", (e) => onPlaybackError(e, "video:error"));
+        art.on("error", (e) => onPlaybackError(e, "art:error"));
 
         // Active 1-second watchdog interval
         playbackWatchdogTimer = setInterval(() => {
@@ -4409,29 +4474,27 @@
 
           if (didAdvance) {
             consecutiveStallSeconds = 0;
-            if (currentT >= 1.0) {
-              hasPlaybackStarted = true;
-              const notice = document.getElementById("codecNotice");
-              if (notice) notice.classList.add("hidden");
-              mediaSub.innerHTML = `
-                <span class="text-[var(--ink-success)] font-bold">STREAMING DIRECT DEBRID CDN</span>
-                <span class="text-[var(--depth-mid)] font-mono"> // PLAYBACK VERIFIED (0% BUFFER)</span>
-              `;
-            }
+            hasPlaybackStarted = true;
+            const notice = document.getElementById("codecNotice");
+            if (notice) notice.classList.add("hidden");
+            mediaSub.innerHTML = `
+              <span class="text-[var(--ink-success)] font-bold">STREAMING DIRECT DEBRID CDN</span>
+              <span class="text-[var(--depth-mid)] font-mono"> // PLAYBACK VERIFIED (0% BUFFER)</span>
+            `;
           } else {
             // Did not advance
-            if (isPaused && hasPlaybackStarted && currentT > 2.0) {
+            if (isPaused && hasPlaybackStarted && currentT > 1.0) {
               // User intentionally paused video; don't count as stall
               consecutiveStallSeconds = 0;
-            } else {
+            } else if (!isPaused) {
               consecutiveStallSeconds++;
             }
           }
 
           // Buffer & Stall Evaluation
           if (!hasPlaybackStarted) {
-            // Initial Startup Phase: stream has 10 seconds to begin rendering frames
-            const remaining = Math.max(0, 10 - elapsedSeconds);
+            // Initial Startup Phase: stream has 25 seconds to begin rendering frames
+            const remaining = Math.max(0, 25 - elapsedSeconds);
             if (isAutoPlayActive && autoPlayQueue && autoPlayIndex + 1 < autoPlayQueue.length) {
               mediaSub.innerHTML = `
                 <span class="text-[var(--depth-near)] font-bold">BUFFERING CDN STREAM [CANDIDATE ${autoPlayIndex + 1}/${autoPlayQueue.length}]</span>
@@ -4444,14 +4507,14 @@
               `;
             }
 
-            if (elapsedSeconds >= 10) {
-              triggerFailover(`BUFFER TIMED OUT (10s) ON CANDIDATE ${autoPlayIndex + 1}`);
+            if (elapsedSeconds >= 25) {
+              triggerFailover(`BUFFER TIMED OUT (25s) ON CANDIDATE ${autoPlayIndex + 1}`);
               return;
             }
           } else {
-            // Steady Playback Phase: detect mid-stream freezes or network stalls
-            if (consecutiveStallSeconds >= 2) {
-              const stallRemaining = Math.max(0, 8 - consecutiveStallSeconds);
+            // Steady Playback Phase: detect mid-stream freezes or network stalls (15s threshold)
+            if (consecutiveStallSeconds >= 3) {
+              const stallRemaining = Math.max(0, 15 - consecutiveStallSeconds);
               if (isAutoPlayActive && autoPlayQueue && autoPlayIndex + 1 < autoPlayQueue.length) {
                 mediaSub.innerHTML = `
                   <span class="text-[var(--depth-near)] font-bold">STREAM BUFFERING [STALLED ${consecutiveStallSeconds}s]</span>
@@ -4460,8 +4523,8 @@
               }
             }
 
-            if (consecutiveStallSeconds >= 8) {
-              triggerFailover(`PLAYBACK FROZEN / BUFFER STALL (8s) ON CANDIDATE ${autoPlayIndex + 1}`);
+            if (consecutiveStallSeconds >= 15) {
+              triggerFailover(`PLAYBACK FROZEN / BUFFER STALL (15s) ON CANDIDATE ${autoPlayIndex + 1}`);
               return;
             }
           }
@@ -4477,12 +4540,8 @@
     }
 
     function closePlayer() {
-      clearAllPlaybackMonitors();
       cancelBingeCountdown();
-      if (art) {
-        try { art.destroy(); } catch (e) {}
-        art = null;
-      }
+      destroyCurrentPlayer();
       isAutoPlayActive = false;
       autoPlayQueue = [];
       autoPlayIndex = 0;
