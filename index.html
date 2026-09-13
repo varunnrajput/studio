@@ -522,12 +522,18 @@
           <div class="depth-rule-double"></div>
 
           <!-- Sensor Coordinates & Hardware State Table -->
-          <div class="grid grid-cols-2 text-left text-[11px] text-[var(--ink-dim)] font-mono gap-1 py-1">
+          <div class="grid grid-cols-2 sm:grid-cols-3 text-left text-[11px] text-[var(--ink-dim)] font-mono gap-1.5 py-1">
             <div>DATE: <span id="receiptDate" class="text-[var(--ink-primary)] font-bold">2026-09-13</span></div>
-            <div class="text-right">TIME: <span id="receiptTime" class="text-[var(--ink-primary)] font-bold">00:00:00 UTC</span></div>
-            <div>DAEMON: <span class="text-[var(--ink-primary)]">TORBOX_DEBRID_CORE</span></div>
+            <div class="text-left sm:text-center">TIME: <span id="receiptTime" class="text-[var(--ink-primary)] font-bold">00:00:00 UTC</span></div>
             <div class="text-right">FOCAL MATRIX: <span class="text-[var(--depth-mid)] font-bold">ACTIVE (120Hz)</span></div>
-            <div>CACHE STATUS: <span class="text-[var(--ink-success)] font-bold">READY (100% CLOUD)</span></div>
+            <div>CACHE: <span class="text-[var(--ink-success)] font-bold">100% DEBRID CLOUD</span></div>
+            <div class="text-left sm:text-center">
+              <button onclick="openLidarSettingsModal()" id="headerTorboxStatusChip" class="hover:underline inline-flex items-center gap-1.5 font-hud cursor-pointer" title="Click to calibrate 3D LiDAR Globe & configure TorBox Key">
+                <span id="headerKeyIndicatorDot" class="w-1.5 h-1.5 rounded-full bg-[var(--depth-mid)]"></span>
+                <span id="headerKeyStatusText" class="text-[var(--depth-mid)] font-bold">TORBOX AUTH</span>
+                <span class="text-[9px] text-[var(--ink-faint)]">[⚙ SETTINGS]</span>
+              </button>
+            </div>
             <div class="text-right flex items-center justify-end gap-2 sm:gap-3">
               <button onclick="lockRegister()" class="hover:underline text-[var(--depth-near)] flex items-center gap-1 font-hud" title="Lock Security Terminal">
                 <span>[LOCK 🔒]</span>
@@ -541,48 +547,6 @@
               </button>
             </div>
           </div>
-
-          <div class="depth-rule-dashed"></div>
-
-          <!-- TorBox API Key Input Slot -->
-          <div class="flex flex-col sm:flex-row items-center justify-between gap-2.5 py-1 text-xs">
-            <div class="flex items-center gap-2 w-full sm:w-auto">
-              <span class="text-[11px] text-[var(--depth-mid)] font-mono uppercase whitespace-nowrap">AUTH TOKEN:</span>
-              <div class="relative w-full sm:w-72">
-                <input 
-                  id="apiKeyInput" 
-                  type="password" 
-                  placeholder="PASTE TORBOX API KEY..." 
-                  class="receipt-input px-3 py-1.5 pr-8 rounded text-xs tracking-wider w-full font-mono"
-                />
-                <button 
-                  type="button" 
-                  onclick="toggleApiKeyVisibility()" 
-                  id="toggleKeyVisBtn" 
-                  class="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-dim)] hover:text-[var(--ink-primary)] text-xs font-mono select-none"
-                  title="Show / Hide Key"
-                >👁</button>
-              </div>
-            </div>
-            <div class="flex items-center gap-2 w-full sm:w-auto">
-              <button 
-                id="connectBtn" 
-                onclick="saveApiKey()" 
-                class="depth-btn px-4 py-1.5 rounded text-xs tracking-wider font-bold flex-1 sm:flex-initial active:scale-95 text-[var(--depth-mid)]"
-              >
-                [ VALIDATE &amp; SAVE ]
-              </button>
-              <button 
-                id="resetKeyBtn" 
-                onclick="resetToDefaultKey()" 
-                class="depth-btn px-3 py-1.5 rounded text-xs tracking-wider font-bold text-[var(--ink-dim)] hover:text-[var(--depth-coral)] active:scale-95"
-                title="Reset to default hardcoded key"
-              >
-                [ RESET ]
-              </button>
-            </div>
-          </div>
-          <div id="keyStatusBadge" class="text-[10px] text-[var(--ink-faint)] text-left pb-1 font-mono"></div>
 
           <div class="depth-rule-dashed"></div>
 
@@ -630,6 +594,9 @@
                 </span>
               </div>
               <div class="flex items-center gap-2">
+                <button onclick="openLidarSettingsModal()" class="text-[10px] font-mono px-2.5 py-1 rounded border border-[var(--depth-mid)]/60 bg-[var(--depth-mid)]/15 text-[var(--depth-mid)] hover:bg-[var(--depth-mid)]/30 font-bold transition flex items-center gap-1 shadow-sm" title="Configure 3D Globe sensor settings & TorBox API key">
+                  [ ⚙ SENSOR SETTINGS // TORBOX AUTH ]
+                </button>
                 <button onclick="resetLidarGlobeOrbit()" class="text-[10px] font-mono px-2.5 py-1 rounded border border-[var(--depth-border)] text-[var(--ink-dim)] hover:text-white hover:border-[var(--depth-mid)] transition" title="Reset 3D rotation orbit">
                   [ ↻ RESET ORBIT ]
                 </button>
@@ -640,8 +607,16 @@
             </div>
 
             <!-- Canvas & Diagnostics Viewport -->
-            <div id="lidarCanvasWrapper" class="relative w-full h-52 sm:h-64 mt-2 rounded-lg bg-black/70 overflow-hidden border border-[var(--depth-border)] flex items-center justify-center cursor-grab active:cursor-grabbing select-none">
+            <div id="lidarCanvasWrapper" class="relative w-full h-52 sm:h-64 mt-2 rounded-lg bg-black/70 overflow-hidden border border-[var(--depth-border)] flex items-center justify-center cursor-pointer select-none group" title="Click anywhere on 3D globe to open Settings & TorBox Key configuration">
               <canvas id="lidarGlobeCanvas" class="w-full h-full block"></canvas>
+
+              <!-- Hover Reticle / Click to configure overlay hint -->
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition duration-200">
+                <div class="px-3 py-1.5 rounded-lg bg-black/85 backdrop-blur-sm border border-[var(--depth-mid)] text-[var(--depth-mid)] text-[11px] font-mono font-bold tracking-wider shadow-2xl flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-[var(--depth-mid)] animate-ping"></span>
+                  <span>⚙ CLICK GLOBE TO CONFIGURE SETTINGS &amp; TORBOX KEY</span>
+                </div>
+              </div>
               
               <!-- Floating HUD Telemetry Readouts -->
               <div class="absolute top-2 left-2 pointer-events-none text-[10px] font-mono flex flex-col gap-1 text-[var(--ink-dim)] bg-black/60 backdrop-blur-sm p-2 rounded border border-[var(--depth-border)]">
@@ -1165,6 +1140,206 @@
   </main> <!-- /depth-console -->
 
   <!-- ============================================================
+       3D LIDAR TELEMETRY & SYSTEM CALIBRATION SETTINGS MODAL
+       ============================================================ -->
+  <div id="lidarSettingsModal" onclick="if(event.target === this) closeLidarSettingsModal();" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden items-center justify-center p-3 sm:p-6 overflow-y-auto">
+    <div class="relative w-full max-w-2xl bg-[var(--depth-surface)] border border-[var(--depth-mid)] rounded-xl shadow-2xl p-4 sm:p-6 flex flex-col gap-4 max-h-[92vh] overflow-y-auto my-auto text-xs font-mono">
+      <div class="card-reticle card-reticle-tl"></div>
+      <div class="card-reticle card-reticle-tr"></div>
+      <div class="card-reticle card-reticle-bl"></div>
+      <div class="card-reticle card-reticle-br"></div>
+      <div class="scanline-overlay pointer-events-none"></div>
+
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between border-b border-dashed border-[var(--depth-border-dashed)] pb-3 z-10">
+        <div class="flex items-center gap-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-[var(--depth-mid)] animate-ping"></span>
+          <div>
+            <h2 class="text-sm sm:text-base font-bold font-hud text-white tracking-wider uppercase">
+              3D LIDAR TELEMETRY // SYSTEM CALIBRATION
+            </h2>
+            <p class="text-[10px] text-[var(--ink-dim)]">Configure TorBox Debrid credentials, globe visualization, and stream engines</p>
+          </div>
+        </div>
+        <button onclick="closeLidarSettingsModal()" class="depth-btn px-2.5 py-1 rounded text-xs font-hud text-[var(--ink-dim)] hover:text-[var(--depth-coral)] hover:border-[var(--depth-coral)] active:scale-95 transition" title="Close Settings (Esc)">
+          [ ✕ CLOSE ]
+        </button>
+      </div>
+
+      <!-- Section 1: TorBox Debrid Cloud Credentials -->
+      <div class="p-3.5 rounded-lg bg-black/60 border border-[var(--depth-border)] flex flex-col gap-2.5 relative z-10">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-bold text-[var(--depth-mid)] uppercase tracking-wider font-hud flex items-center gap-1.5">
+            <span>🔑</span> TORBOX DEBRID API TOKEN
+          </span>
+          <span id="modalKeyStatusChip" class="text-[9px] font-mono px-2 py-0.5 rounded bg-[var(--depth-mid)]/15 text-[var(--depth-mid)] border border-[var(--depth-mid)]/30 font-bold">
+            CHECKING...
+          </span>
+        </div>
+        <p class="text-[11px] text-[var(--ink-dim)] leading-relaxed">
+          Your personal TorBox API token authorizes cloud caching and 0% buffering streams. Get your token at <a href="https://torbox.app/settings" target="_blank" class="text-[var(--depth-mid)] underline hover:text-white">torbox.app/settings</a>.
+        </p>
+        
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+          <div class="relative flex-1">
+            <input 
+              id="apiKeyInput" 
+              type="password" 
+              placeholder="Paste TorBox API token here..." 
+              class="receipt-input px-3 py-2 pr-10 rounded text-xs tracking-wider w-full font-mono bg-black/80 border border-[var(--depth-border)] text-white focus:border-[var(--depth-mid)] outline-none"
+            />
+            <button 
+              type="button" 
+              onclick="toggleApiKeyVisibility()" 
+              id="toggleKeyVisBtn" 
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ink-dim)] hover:text-white text-xs select-none"
+              title="Toggle Token Visibility"
+            >👁</button>
+          </div>
+          <button 
+            id="modalTestKeyBtn"
+            onclick="testAndSaveApiKey()" 
+            class="depth-btn-primary px-4 py-2 rounded text-xs tracking-wider font-bold active:scale-95 flex items-center justify-center gap-1 font-hud uppercase shrink-0"
+          >
+            <span>[ ⚡ TEST &amp; SAVE ]</span>
+          </button>
+          <button 
+            onclick="resetToDefaultKey()" 
+            class="depth-btn px-3 py-2 rounded text-xs tracking-wider font-bold text-[var(--ink-dim)] hover:text-white active:scale-95 shrink-0"
+            title="Reset to factory hardcoded key"
+          >
+            [ RESET ]
+          </button>
+        </div>
+        <div id="modalKeyStatusBadge" class="text-[10px] text-[var(--ink-faint)] min-h-[18px]"></div>
+      </div>
+
+      <!-- Section 2: 3D LiDAR Globe Sensor Tuning -->
+      <div class="p-3.5 rounded-lg bg-black/60 border border-[var(--depth-border)] flex flex-col gap-3 relative z-10">
+        <span class="text-[11px] font-bold text-[var(--depth-near)] uppercase tracking-wider font-hud flex items-center gap-1.5">
+          <span>🌐</span> 3D LIDAR GLOBE SENSOR CUSTOMIZATION
+        </span>
+
+        <!-- False-Color Palette Selection -->
+        <div class="flex flex-col gap-1.5">
+          <span class="text-[10px] text-[var(--ink-dim)] uppercase">FALSE-COLOR DEPTH PALETTE:</span>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2" id="globeThemeButtons">
+            <button onclick="setLidarTheme('cyan')" id="themeBtn-cyan" class="px-2.5 py-1.5 rounded border text-[10px] font-bold text-left flex items-center gap-2 transition border-[var(--depth-mid)] bg-[var(--depth-mid)]/20 text-[var(--depth-mid)]">
+              <span class="w-3 h-3 rounded-full bg-[#00f5d4] inline-block shadow"></span>
+              <span>CYAN DEPTH</span>
+            </button>
+            <button onclick="setLidarTheme('amber')" id="themeBtn-amber" class="px-2.5 py-1.5 rounded border text-[10px] font-bold text-left flex items-center gap-2 transition border-[var(--depth-border)] text-[var(--ink-dim)] hover:border-amber-400">
+              <span class="w-3 h-3 rounded-full bg-[#f59e0b] inline-block shadow"></span>
+              <span>SOLAR AMBER</span>
+            </button>
+            <button onclick="setLidarTheme('purple')" id="themeBtn-purple" class="px-2.5 py-1.5 rounded border text-[10px] font-bold text-left flex items-center gap-2 transition border-[var(--depth-border)] text-[var(--ink-dim)] hover:border-pink-500">
+              <span class="w-3 h-3 rounded-full bg-[#ec4899] inline-block shadow"></span>
+              <span>NEON PURPLE</span>
+            </button>
+            <button onclick="setLidarTheme('green')" id="themeBtn-green" class="px-2.5 py-1.5 rounded border text-[10px] font-bold text-left flex items-center gap-2 transition border-[var(--depth-border)] text-[var(--ink-dim)] hover:border-emerald-400">
+              <span class="w-3 h-3 rounded-full bg-[#10b981] inline-block shadow"></span>
+              <span>MATRIX GREEN</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Orbit Speed & Point Density Controls -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <div class="flex flex-col gap-1.5">
+            <span class="text-[10px] text-[var(--ink-dim)] uppercase">ORBIT ROTATION SPEED:</span>
+            <div class="flex items-center gap-1.5" id="globeSpeedButtons">
+              <button onclick="setLidarSpeed(0)" id="speedBtn-0" class="flex-1 py-1 rounded border border-[var(--depth-border)] text-[10px] text-[var(--ink-dim)] hover:text-white">0x (PAUSE)</button>
+              <button onclick="setLidarSpeed(0.5)" id="speedBtn-05" class="flex-1 py-1 rounded border border-[var(--depth-border)] text-[10px] text-[var(--ink-dim)] hover:text-white">0.5x</button>
+              <button onclick="setLidarSpeed(1.0)" id="speedBtn-1" class="flex-1 py-1 rounded border border-[var(--depth-mid)] bg-[var(--depth-mid)]/20 text-[var(--depth-mid)] font-bold text-[10px]">1.0x</button>
+              <button onclick="setLidarSpeed(2.0)" id="speedBtn-2" class="flex-1 py-1 rounded border border-[var(--depth-border)] text-[10px] text-[var(--ink-dim)] hover:text-white">2.0x</button>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <span class="text-[10px] text-[var(--ink-dim)] uppercase">SWARM POINT CLOUD DENSITY:</span>
+            <div class="flex items-center gap-1.5" id="globeDensityButtons">
+              <button onclick="setLidarDensity(60)" id="densityBtn-60" class="flex-1 py-1 rounded border border-[var(--depth-border)] text-[10px] text-[var(--ink-dim)] hover:text-white">60 (ECO)</button>
+              <button onclick="setLidarDensity(120)" id="densityBtn-120" class="flex-1 py-1 rounded border border-[var(--depth-mid)] bg-[var(--depth-mid)]/20 text-[var(--depth-mid)] font-bold text-[10px]">120 (STD)</button>
+              <button onclick="setLidarDensity(200)" id="densityBtn-200" class="flex-1 py-1 rounded border border-[var(--depth-border)] text-[10px] text-[var(--ink-dim)] hover:text-white">200 (ULTRA)</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 3: Playback & Streaming Engine Settings -->
+      <div class="p-3.5 rounded-lg bg-black/60 border border-[var(--depth-border)] flex flex-col gap-3 relative z-10">
+        <span class="text-[11px] font-bold text-[var(--depth-coral)] uppercase tracking-wider font-hud flex items-center gap-1.5">
+          <span>⚡</span> PLAYBACK &amp; STREAM ENGINE PREFERENCES
+        </span>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- Stream Container Mode -->
+          <div class="flex flex-col gap-1.5">
+            <span class="text-[10px] text-[var(--ink-dim)] uppercase">STREAM CONTAINER PRIORITY:</span>
+            <select id="prefStreamFormat" onchange="saveStreamFormatPref(this.value)" class="receipt-input px-2.5 py-1.5 rounded text-xs text-[var(--ink-primary)] bg-black/80 border border-[var(--depth-border)]">
+              <option value="mp4">🎬 MP4 PREFERRED (Fast in-browser playback)</option>
+              <option value="any">📦 ANY CONTAINER (Includes 4K MKV &amp; Remuxes)</option>
+            </select>
+          </div>
+
+          <!-- Binge Countdown Duration -->
+          <div class="flex flex-col gap-1.5">
+            <span class="text-[10px] text-[var(--ink-dim)] uppercase">BINGE NEXT EPISODE AUTO-ADVANCE:</span>
+            <select id="prefBingeCountdown" onchange="saveBingePref(this.value)" class="receipt-input px-2.5 py-1.5 rounded text-xs text-[var(--ink-primary)] bg-black/80 border border-[var(--depth-border)]">
+              <option value="5">5 Seconds Countdown</option>
+              <option value="10" selected>10 Seconds (Standard HUD)</option>
+              <option value="15">15 Seconds Countdown</option>
+              <option value="0">Disabled (Manual trigger only)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <!-- Preferred Subtitle Track -->
+          <div class="flex flex-col gap-1.5">
+            <span class="text-[10px] text-[var(--ink-dim)] uppercase">DEFAULT SUBTITLE LANGUAGE:</span>
+            <select id="prefSubLang" onchange="saveSubLangPref(this.value)" class="receipt-input px-2.5 py-1.5 rounded text-xs text-[var(--ink-primary)] bg-black/80 border border-[var(--depth-border)]">
+              <option value="eng" selected>English [eng]</option>
+              <option value="spa">Spanish [spa]</option>
+              <option value="fre">French [fre]</option>
+              <option value="deu">German [deu]</option>
+              <option value="ita">Italian [ita]</option>
+              <option value="por">Portuguese [por]</option>
+              <option value="jpn">Japanese [jpn]</option>
+              <option value="chi">Chinese [chi]</option>
+              <option value="kor">Korean [kor]</option>
+              <option value="none">Captions Disabled by Default</option>
+            </select>
+          </div>
+
+          <!-- Quick Cache Flush & Actions -->
+          <div class="flex flex-col gap-1.5 justify-end">
+            <span class="text-[10px] text-[var(--ink-dim)] uppercase">CACHE &amp; LOG MANAGEMENT:</span>
+            <div class="flex items-center gap-2">
+              <button onclick="clearAllFlightLogs();" class="depth-btn flex-1 py-1.5 rounded text-[10px] text-[var(--ink-dim)] hover:text-[var(--depth-coral)] border border-[var(--depth-border)] active:scale-95" title="Clear Continue Watching history">
+                [ 🧹 CLEAR FLIGHT LOGS ]
+              </button>
+              <button onclick="resetAllFactorySettings()" class="depth-btn flex-1 py-1.5 rounded text-[10px] text-[var(--ink-dim)] hover:text-white border border-[var(--depth-border)] active:scale-95" title="Revert all visual &amp; playback settings">
+                [ ↻ RESTORE DEFAULTS ]
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer Action -->
+      <div class="flex items-center justify-between border-t border-dashed border-[var(--depth-border-dashed)] pt-3 z-10">
+        <div class="text-[10px] text-[var(--ink-dim)] font-mono">
+          STATUS: <span class="text-[var(--ink-success)] font-bold">ALL CONFIGURATIONS PERSISTED TO LOCAL STORAGE</span>
+        </div>
+        <button onclick="closeLidarSettingsModal()" class="depth-btn-primary px-5 py-2 rounded text-xs font-bold font-hud uppercase tracking-wider active:scale-95">
+          ✔ DONE // SAVE &amp; RETURN
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
        INTERACTIVE SEASON & EPISODE MATRIX MODAL (BINGE HUD)
        ============================================================ -->
   <div id="episodeMatrixModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden items-center justify-center p-3 sm:p-6 overflow-y-auto">
@@ -1606,35 +1781,238 @@
     });
 
     // ==========================================
-    // 4. TorBox API Key Storage & Sync
+    // 4. TorBox API Key Storage & Telemetry Calibration
     // ==========================================
     const apiKeyInput = document.getElementById("apiKeyInput");
-    const keyStatusBadge = document.getElementById("keyStatusBadge");
+    const keyStatusBadge = document.getElementById("modalKeyStatusBadge");
+
+    const LIDAR_THEMES = {
+      cyan: {
+        name: "CYAN DEPTH",
+        primary: "#00f5d4",
+        secondary: "#6366f1",
+        accent: "#ff9f1c",
+        hub: "#ff3366",
+        bgCenter: "rgba(0, 245, 212, 0.08)",
+        bgMid: "rgba(8, 13, 26, 0.6)",
+        bgEdge: "rgba(5, 8, 17, 0.95)",
+        ring: "rgba(0, 245, 212, 0.35)",
+        latZero: "rgba(0, 245, 212, 0.28)",
+        latOther: "rgba(99, 102, 241, 0.12)",
+        meridian: "rgba(99, 102, 241, 0.1)",
+        sweep: "rgba(0, 245, 212, 0.8)",
+        nodeNear: (pulse) => `rgba(0, 245, 212, ${0.6 + pulse * 0.2})`,
+        nodeMid: (pulse) => `rgba(255, 159, 28, ${0.45 + pulse * 0.15})`,
+        nodeFar: "rgba(99, 102, 241, 0.35)",
+        hubRing: "rgba(255, 51, 102, 0.6)",
+        hubCenter: "#ff3366",
+        hubLine: "rgba(0, 245, 212, 0.35)"
+      },
+      amber: {
+        name: "SOLAR AMBER",
+        primary: "#f59e0b",
+        secondary: "#d97706",
+        accent: "#f97316",
+        hub: "#ef4444",
+        bgCenter: "rgba(245, 158, 11, 0.1)",
+        bgMid: "rgba(26, 17, 8, 0.65)",
+        bgEdge: "rgba(18, 10, 5, 0.95)",
+        ring: "rgba(245, 158, 11, 0.4)",
+        latZero: "rgba(245, 158, 11, 0.35)",
+        latOther: "rgba(217, 119, 6, 0.15)",
+        meridian: "rgba(180, 83, 9, 0.12)",
+        sweep: "rgba(251, 191, 36, 0.9)",
+        nodeNear: (pulse) => `rgba(251, 191, 36, ${0.65 + pulse * 0.2})`,
+        nodeMid: (pulse) => `rgba(249, 115, 22, ${0.5 + pulse * 0.15})`,
+        nodeFar: "rgba(180, 83, 9, 0.4)",
+        hubRing: "rgba(239, 68, 68, 0.7)",
+        hubCenter: "#ef4444",
+        hubLine: "rgba(245, 158, 11, 0.4)"
+      },
+      purple: {
+        name: "NEON PURPLE",
+        primary: "#ec4899",
+        secondary: "#a855f7",
+        accent: "#c084fc",
+        hub: "#38bdf8",
+        bgCenter: "rgba(236, 72, 153, 0.09)",
+        bgMid: "rgba(20, 10, 28, 0.65)",
+        bgEdge: "rgba(14, 6, 20, 0.95)",
+        ring: "rgba(217, 70, 239, 0.4)",
+        latZero: "rgba(236, 72, 153, 0.35)",
+        latOther: "rgba(168, 85, 247, 0.15)",
+        meridian: "rgba(147, 51, 234, 0.12)",
+        sweep: "rgba(244, 114, 182, 0.9)",
+        nodeNear: (pulse) => `rgba(244, 114, 182, ${0.65 + pulse * 0.2})`,
+        nodeMid: (pulse) => `rgba(192, 132, 252, ${0.5 + pulse * 0.15})`,
+        nodeFar: "rgba(126, 34, 206, 0.4)",
+        hubRing: "rgba(56, 189, 248, 0.7)",
+        hubCenter: "#38bdf8",
+        hubLine: "rgba(217, 70, 239, 0.4)"
+      },
+      green: {
+        name: "MATRIX GREEN",
+        primary: "#10b981",
+        secondary: "#059669",
+        accent: "#34d399",
+        hub: "#facc15",
+        bgCenter: "rgba(16, 185, 129, 0.09)",
+        bgMid: "rgba(8, 24, 16, 0.65)",
+        bgEdge: "rgba(4, 16, 10, 0.95)",
+        ring: "rgba(16, 185, 129, 0.4)",
+        latZero: "rgba(52, 211, 153, 0.35)",
+        latOther: "rgba(5, 150, 105, 0.15)",
+        meridian: "rgba(4, 120, 87, 0.12)",
+        sweep: "rgba(52, 211, 153, 0.9)",
+        nodeNear: (pulse) => `rgba(52, 211, 153, ${0.65 + pulse * 0.2})`,
+        nodeMid: (pulse) => `rgba(16, 185, 129, ${0.5 + pulse * 0.15})`,
+        nodeFar: "rgba(4, 120, 87, 0.4)",
+        hubRing: "rgba(250, 204, 21, 0.7)",
+        hubCenter: "#facc15",
+        hubLine: "rgba(16, 185, 129, 0.4)"
+      }
+    };
+
+    function openLidarSettingsModal(notice = "") {
+      playPaperTick();
+      const modal = document.getElementById("lidarSettingsModal");
+      if (!modal) return;
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      document.body.style.overflow = "hidden";
+      syncSettingsUI();
+      if (notice) {
+        const badge = document.getElementById("modalKeyStatusBadge");
+        if (badge) {
+          badge.innerHTML = `<span class="text-[var(--depth-near)] font-bold">⚠️ ${notice}</span>`;
+        }
+        const input = document.getElementById("apiKeyInput");
+        if (input) input.focus();
+      }
+    }
+
+    function closeLidarSettingsModal() {
+      playPaperTick();
+      const modal = document.getElementById("lidarSettingsModal");
+      if (!modal) return;
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+      document.body.style.overflow = "";
+    }
 
     function updateApiKeyStatusUI() {
       const storedKey = localStorage.getItem("stuvio_tb_key");
-      if (apiKeyInput) {
-        apiKeyInput.value = apiKey;
+      const headerChip = document.getElementById("headerTorboxStatusChip");
+      const modalChip = document.getElementById("modalKeyStatusChip");
+      const modalBadge = document.getElementById("modalKeyStatusBadge");
+      const input = document.getElementById("apiKeyInput");
+
+      if (input) {
+        input.value = apiKey || "";
       }
-      if (keyStatusBadge) {
-        if (storedKey) {
-          keyStatusBadge.innerHTML = `<span class="text-[var(--depth-mid)] font-bold">● CUSTOM USER KEY ACTIVE</span> <button onclick="resetToDefaultKey()" class="underline hover:text-[var(--ink-primary)] ml-1">[RESTORE HARDCODED KEY]</button>`;
-        } else if (DEFAULT_CONFIG.TORBOX_API_KEY) {
-          keyStatusBadge.innerHTML = `<span class="text-[var(--ink-primary)] font-bold">● HARDCODED DEFAULT KEY ACTIVE</span>`;
+
+      if (apiKey && storedKey) {
+        if (headerChip) {
+          headerChip.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-[var(--depth-mid)] animate-pulse inline-block"></span><span class="text-[var(--ink-dim)]">TORBOX:</span> <span class="text-[var(--depth-mid)] font-bold font-mono">USER KEY ACTIVE ⚙</span>`;
+        }
+        if (modalChip) {
+          modalChip.innerHTML = `<span class="w-2 h-2 rounded-full bg-[var(--depth-mid)] inline-block"></span> <span class="text-[var(--depth-mid)] font-bold">USER KEY LINKED</span>`;
+        }
+        if (modalBadge) {
+          modalBadge.innerHTML = `<span class="text-[var(--depth-mid)] font-bold">● CUSTOM USER KEY LINKED &amp; SAVED IN BROWSER</span>`;
+        }
+      } else if (apiKey && DEFAULT_CONFIG.TORBOX_API_KEY) {
+        if (headerChip) {
+          headerChip.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-[var(--ink-success)] inline-block"></span><span class="text-[var(--ink-dim)]">TORBOX:</span> <span class="text-[var(--ink-success)] font-bold font-mono">DEFAULT KEY ⚙</span>`;
+        }
+        if (modalChip) {
+          modalChip.innerHTML = `<span class="w-2 h-2 rounded-full bg-[var(--ink-success)] inline-block"></span> <span class="text-[var(--ink-success)] font-bold">DEFAULT KEY ACTIVE</span>`;
+        }
+        if (modalBadge) {
+          modalBadge.innerHTML = `<span class="text-[var(--ink-success)] font-bold">● HARDCODED DEFAULT KEY ACTIVE // ENTER PERSONAL KEY FOR PRIVATE DEBRID</span>`;
+        }
+      } else {
+        if (headerChip) {
+          headerChip.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-[var(--depth-near)] animate-ping inline-block"></span><span class="text-[var(--depth-near)] font-bold font-mono">TORBOX: NO KEY [CONFIG] ⚙</span>`;
+        }
+        if (modalChip) {
+          modalChip.innerHTML = `<span class="w-2 h-2 rounded-full bg-[var(--depth-near)] inline-block"></span> <span class="text-[var(--depth-near)] font-bold">NO KEY CONFIGURED</span>`;
+        }
+        if (modalBadge) {
+          modalBadge.innerHTML = `<span class="text-[var(--depth-near)] font-bold">○ NO KEY CONFIGURED // PASTE TORBOX API TOKEN IN FIELD ABOVE</span>`;
+        }
+      }
+    }
+
+    async function testAndSaveApiKey() {
+      const input = document.getElementById("apiKeyInput");
+      const badge = document.getElementById("modalKeyStatusBadge");
+      const btn = document.getElementById("modalTestKeyBtn");
+      const keyVal = input ? input.value.trim() : "";
+
+      if (!keyVal) {
+        if (badge) badge.innerHTML = `<span class="text-[var(--depth-near)] font-bold">⚠️ PLEASE PASTE A TORBOX API TOKEN FIRST.</span>`;
+        return;
+      }
+
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>[ ⚡ TESTING... ]</span>`;
+      }
+      if (badge) {
+        badge.innerHTML = `<span class="text-[var(--depth-mid)] animate-pulse font-mono">PINGING TORBOX SENSOR API // VERIFYING TOKEN VALIDITY...</span>`;
+      }
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(`${API_BASE}/torrents/mylist?bypass_cache=true&token=${encodeURIComponent(keyVal)}`, {
+          headers: { "Authorization": `Bearer ${keyVal}` },
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        const data = await res.json().catch(() => null);
+
+        if (res.ok && (data?.success !== false)) {
+          apiKey = keyVal;
+          localStorage.setItem("stuvio_tb_key", apiKey);
+          playPaperFeed();
+          updateApiKeyStatusUI();
+          if (badge) {
+            const plan = (data?.detail?.plan !== undefined) ? `PLAN: ${data.detail.plan}` : "CONNECTED";
+            badge.innerHTML = `<span class="text-[var(--ink-success)] font-bold">✔ AUTHENTICATED // TORBOX LINK ESTABLISHED (${plan}). SAVED!</span>`;
+          }
         } else {
-          keyStatusBadge.innerHTML = `<span class="text-[var(--depth-near)]">○ NO KEY CONFIGURED // PASTE TORBOX KEY IN FIELD ABOVE</span>`;
+          const errDetail = data?.detail || data?.error || res.statusText || "Unauthorized token";
+          if (badge) {
+            badge.innerHTML = `<span class="text-[var(--depth-near)] font-bold">❌ CONNECTION REJECTED (${res.status}): ${errDetail}. Check token at torbox.app.</span>`;
+          }
+        }
+      } catch (err) {
+        if (badge) {
+          badge.innerHTML = `<span class="text-[var(--depth-near)] font-bold">❌ NETWORK ERROR: ${err.message}. Check connection or TorBox status.</span>`;
+        }
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `<span>[ ⚡ TEST &amp; SAVE ]</span>`;
         }
       }
     }
 
     function saveApiKey() {
-      const newKey = apiKeyInput.value.trim();
+      const input = document.getElementById("apiKeyInput");
+      const badge = document.getElementById("modalKeyStatusBadge");
+      const newKey = input ? input.value.trim() : "";
       if (newKey) {
         apiKey = newKey;
         localStorage.setItem("stuvio_tb_key", apiKey);
         playPaperFeed();
         updateApiKeyStatusUI();
-        alert("TOKEN STORED // TORBOX SENSOR PIPELINE LINKED.");
+        if (badge) {
+          badge.innerHTML = `<span class="text-[var(--ink-success)] font-bold">✔ TOKEN STORED // TORBOX SENSOR PIPELINE LINKED.</span>`;
+        }
       } else {
         resetToDefaultKey();
       }
@@ -1643,20 +2021,153 @@
     function resetToDefaultKey() {
       localStorage.removeItem("stuvio_tb_key");
       apiKey = DEFAULT_CONFIG.TORBOX_API_KEY || "";
+      const badge = document.getElementById("modalKeyStatusBadge");
       playPaperTick();
       updateApiKeyStatusUI();
-      alert("RESET COMPLETED // REVERTED TO HARDCODED DEFAULT KEY.");
+      if (badge) {
+        badge.innerHTML = `<span class="text-[var(--ink-primary)] font-bold">↻ RESET COMPLETED // REVERTED TO HARDCODED DEFAULT KEY.</span>`;
+      }
     }
 
     function toggleApiKeyVisibility() {
       playPaperTick();
+      const input = document.getElementById("apiKeyInput");
       const btn = document.getElementById("toggleKeyVisBtn");
-      if (apiKeyInput.type === "password") {
-        apiKeyInput.type = "text";
+      if (!input) return;
+      if (input.type === "password") {
+        input.type = "text";
         if (btn) btn.innerText = "🔒";
       } else {
-        apiKeyInput.type = "password";
+        input.type = "password";
         if (btn) btn.innerText = "👁";
+      }
+    }
+
+    function setLidarTheme(theme) {
+      if (!LIDAR_THEMES[theme]) return;
+      playPaperTick();
+      lidarGlobeState.theme = theme;
+      localStorage.setItem("stuvio_lidar_theme", theme);
+      syncSettingsUI();
+    }
+
+    function setLidarSpeed(spd) {
+      playPaperTick();
+      lidarGlobeState.speedMultiplier = Number(spd);
+      localStorage.setItem("stuvio_lidar_speed", String(spd));
+      syncSettingsUI();
+    }
+
+    function setLidarDensity(density) {
+      playPaperTick();
+      lidarGlobeState.nodeDensity = Number(density);
+      localStorage.setItem("stuvio_lidar_density", String(density));
+      generateLidarNodes(lidarGlobeState.nodeDensity);
+      syncSettingsUI();
+    }
+
+    function saveStreamFormatPref(val) {
+      playPaperTick();
+      localStorage.setItem("stuvio_pref_format", val);
+      syncSettingsUI();
+    }
+
+    function saveBingePref(val) {
+      playPaperTick();
+      localStorage.setItem("stuvio_pref_binge_sec", val);
+      syncSettingsUI();
+    }
+
+    function saveSubLangPref(val) {
+      playPaperTick();
+      localStorage.setItem("stuvio_pref_sub_lang", val);
+      syncSettingsUI();
+    }
+
+    function clearAllFlightLogs() {
+      if (confirm("CLEAR ALL FLIGHT LOGS?\nThis will erase continue-watching records and playback positions.")) {
+        localStorage.removeItem(FLIGHT_LOG_KEY);
+        playPaperFeed();
+        renderFlightLogsUI();
+        const badge = document.getElementById("modalKeyStatusBadge");
+        if (badge) {
+          badge.innerHTML = `<span class="text-[var(--ink-success)] font-bold">✔ FLIGHT LOGS CLEARED // CONTINUE-WATCHING RECORD RESET.</span>`;
+        }
+      }
+    }
+
+    function resetAllFactorySettings() {
+      playPaperFeed();
+      localStorage.removeItem("stuvio_lidar_theme");
+      localStorage.removeItem("stuvio_lidar_speed");
+      localStorage.removeItem("stuvio_lidar_density");
+      localStorage.removeItem("stuvio_pref_format");
+      localStorage.removeItem("stuvio_pref_binge_sec");
+      localStorage.removeItem("stuvio_pref_sub_lang");
+
+      lidarGlobeState.theme = "cyan";
+      lidarGlobeState.speedMultiplier = 1.0;
+      lidarGlobeState.nodeDensity = 120;
+      generateLidarNodes(120);
+      syncSettingsUI();
+
+      const badge = document.getElementById("modalKeyStatusBadge");
+      if (badge) {
+        badge.innerHTML = `<span class="text-[var(--depth-mid)] font-bold">↻ ALL SENSOR &amp; PLAYBACK PREFERENCES REVERTED TO FACTORY DEFAULTS.</span>`;
+      }
+    }
+
+    function syncSettingsUI() {
+      updateApiKeyStatusUI();
+
+      // Themes
+      ["cyan", "amber", "purple", "green"].forEach(t => {
+        const btn = document.getElementById(`themeBtn-${t}`);
+        if (!btn) return;
+        if (lidarGlobeState.theme === t) {
+          btn.className = "px-2.5 py-1.5 rounded border text-[10px] font-bold text-left flex items-center gap-2 transition border-[var(--depth-mid)] bg-[var(--depth-mid)]/20 text-white shadow-[0_0_10px_rgba(0,245,212,0.15)]";
+        } else {
+          btn.className = "px-2.5 py-1.5 rounded border text-[10px] font-bold text-left flex items-center gap-2 transition border-[var(--depth-border)] text-[var(--ink-dim)] hover:border-[var(--depth-mid)]/50 hover:text-white";
+        }
+      });
+
+      // Speeds
+      const speedMap = { "0": "speedBtn-0", "0.5": "speedBtn-05", "1": "speedBtn-1", "2": "speedBtn-2" };
+      Object.entries(speedMap).forEach(([k, btnId]) => {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        const active = Number(k) === Number(lidarGlobeState.speedMultiplier);
+        if (active) {
+          btn.className = "flex-1 py-1 rounded border border-[var(--depth-mid)] bg-[var(--depth-mid)]/20 text-[var(--depth-mid)] font-bold text-[10px]";
+        } else {
+          btn.className = "flex-1 py-1 rounded border border-[var(--depth-border)] text-[10px] text-[var(--ink-dim)] hover:text-white";
+        }
+      });
+
+      // Density
+      [60, 120, 200].forEach(d => {
+        const btn = document.getElementById(`densityBtn-${d}`);
+        if (!btn) return;
+        const active = d === Number(lidarGlobeState.nodeDensity);
+        if (active) {
+          btn.className = "flex-1 py-1 rounded border border-[var(--depth-mid)] bg-[var(--depth-mid)]/20 text-[var(--depth-mid)] font-bold text-[10px]";
+        } else {
+          btn.className = "flex-1 py-1 rounded border border-[var(--depth-border)] text-[10px] text-[var(--ink-dim)] hover:text-white";
+        }
+      });
+
+      // Selects
+      const prefFormat = document.getElementById("prefStreamFormat");
+      if (prefFormat) {
+        prefFormat.value = localStorage.getItem("stuvio_pref_format") || "mp4";
+      }
+      const prefBinge = document.getElementById("prefBingeCountdown");
+      if (prefBinge) {
+        prefBinge.value = localStorage.getItem("stuvio_pref_binge_sec") !== null ? localStorage.getItem("stuvio_pref_binge_sec") : "10";
+      }
+      const prefSub = document.getElementById("prefSubLang");
+      if (prefSub) {
+        prefSub.value = localStorage.getItem("stuvio_pref_sub_lang") || "eng";
       }
     }
 
@@ -1677,6 +2188,9 @@
       lastMouseY: 0,
       sonarAngle: 0,
       isExpanded: true,
+      theme: localStorage.getItem("stuvio_lidar_theme") || "cyan",
+      speedMultiplier: parseFloat(localStorage.getItem("stuvio_lidar_speed") !== null ? localStorage.getItem("stuvio_lidar_speed") : "1.0"),
+      nodeDensity: parseInt(localStorage.getItem("stuvio_lidar_density") || "120", 10),
       nodes: [],
       datacenters: [
         { name: "FRA", city: "Frankfurt", lat: 50.1, lon: 8.6, ping: "28ms" },
@@ -1689,19 +2203,9 @@
       ]
     };
 
-    function initLidarGlobe() {
-      const canvas = document.getElementById("lidarGlobeCanvas");
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      lidarGlobeState.canvas = canvas;
-      lidarGlobeState.ctx = ctx;
-
-      // Generate 120 distributed point cloud surface nodes
+    function generateLidarNodes(numNodes) {
       lidarGlobeState.nodes = [];
       const phi = (1 + Math.sqrt(5)) / 2; // Golden ratio
-      const numNodes = 120;
       for (let i = 0; i < numNodes; i++) {
         const theta = 2 * Math.PI * i / phi;
         const phiAngle = Math.acos(1 - 2 * (i + 0.5) / numNodes);
@@ -1712,6 +2216,19 @@
           pulse: Math.random() * Math.PI * 2
         });
       }
+    }
+
+    function initLidarGlobe() {
+      const canvas = document.getElementById("lidarGlobeCanvas");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      lidarGlobeState.canvas = canvas;
+      lidarGlobeState.ctx = ctx;
+
+      // Generate distributed point cloud surface nodes from configured density
+      generateLidarNodes(lidarGlobeState.nodeDensity);
 
       // Convert datacenters to 3D Cartesian coordinates
       lidarGlobeState.datacenters.forEach(dc => {
@@ -1731,12 +2248,19 @@
       resizeCanvas();
       window.addEventListener("resize", resizeCanvas);
 
-      // Mouse & Touch Drag Listeners
+      // Mouse & Touch Drag & Click Listeners
+      let pointerDownX = 0;
+      let pointerDownY = 0;
+      let pointerDownTime = 0;
+
       const wrapper = document.getElementById("lidarCanvasWrapper") || canvas;
       wrapper.addEventListener("mousedown", (e) => {
         lidarGlobeState.isDragging = true;
         lidarGlobeState.lastMouseX = e.clientX;
         lidarGlobeState.lastMouseY = e.clientY;
+        pointerDownX = e.clientX;
+        pointerDownY = e.clientY;
+        pointerDownTime = Date.now();
       });
       window.addEventListener("mousemove", (e) => {
         if (!lidarGlobeState.isDragging) return;
@@ -1748,7 +2272,15 @@
         lidarGlobeState.targetPitch += dy * 0.008;
         lidarGlobeState.targetPitch = Math.max(-1.1, Math.min(1.1, lidarGlobeState.targetPitch));
       });
-      window.addEventListener("mouseup", () => {
+      window.addEventListener("mouseup", (e) => {
+        if (lidarGlobeState.isDragging) {
+          const dist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
+          const elapsed = Date.now() - pointerDownTime;
+          if (dist < 8 && elapsed < 400) {
+            // Click on the 3D globe opens the Sensor & TorBox Settings
+            openLidarSettingsModal();
+          }
+        }
         lidarGlobeState.isDragging = false;
       });
 
@@ -1757,6 +2289,9 @@
           lidarGlobeState.isDragging = true;
           lidarGlobeState.lastMouseX = e.touches[0].clientX;
           lidarGlobeState.lastMouseY = e.touches[0].clientY;
+          pointerDownX = e.touches[0].clientX;
+          pointerDownY = e.touches[0].clientY;
+          pointerDownTime = Date.now();
         }
       }, { passive: true });
       window.addEventListener("touchmove", (e) => {
@@ -1769,7 +2304,15 @@
         lidarGlobeState.targetPitch += dy * 0.008;
         lidarGlobeState.targetPitch = Math.max(-1.1, Math.min(1.1, lidarGlobeState.targetPitch));
       }, { passive: true });
-      window.addEventListener("touchend", () => {
+      window.addEventListener("touchend", (e) => {
+        if (lidarGlobeState.isDragging && e.changedTouches && e.changedTouches.length) {
+          const t = e.changedTouches[0];
+          const dist = Math.hypot(t.clientX - pointerDownX, t.clientY - pointerDownY);
+          const elapsed = Date.now() - pointerDownTime;
+          if (dist < 10 && elapsed < 450) {
+            openLidarSettingsModal();
+          }
+        }
         lidarGlobeState.isDragging = false;
       });
 
@@ -1801,12 +2344,15 @@
       const { canvas, ctx } = lidarGlobeState;
       if (!canvas || !ctx) return;
 
+      const activeTheme = LIDAR_THEMES[lidarGlobeState.theme] || LIDAR_THEMES.cyan;
+      const speed = (lidarGlobeState.speedMultiplier !== undefined) ? lidarGlobeState.speedMultiplier : 1.0;
+
       if (!lidarGlobeState.isDragging) {
-        lidarGlobeState.targetYaw += 0.004;
+        lidarGlobeState.targetYaw += 0.004 * speed;
       }
       lidarGlobeState.yaw += (lidarGlobeState.targetYaw - lidarGlobeState.yaw) * 0.08;
       lidarGlobeState.pitch += (lidarGlobeState.targetPitch - lidarGlobeState.pitch) * 0.08;
-      lidarGlobeState.sonarAngle += 0.025;
+      lidarGlobeState.sonarAngle += 0.025 * (speed === 0 ? 0.2 : speed);
 
       const w = canvas.width;
       const h = canvas.height;
@@ -1838,18 +2384,18 @@
         };
       }
 
-      // 1. Draw subtle background sphere disc
+      // 1. Draw subtle background sphere disc using theme false-color
       const bgGrad = ctx.createRadialGradient(cx, cy, radius * 0.1, cx, cy, radius);
-      bgGrad.addColorStop(0, "rgba(0, 245, 212, 0.08)");
-      bgGrad.addColorStop(0.7, "rgba(8, 13, 26, 0.6)");
-      bgGrad.addColorStop(1, "rgba(5, 8, 17, 0.95)");
+      bgGrad.addColorStop(0, activeTheme.bgCenter);
+      bgGrad.addColorStop(0.7, activeTheme.bgMid);
+      bgGrad.addColorStop(1, activeTheme.bgEdge);
       ctx.fillStyle = bgGrad;
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.fill();
 
       // Outer bounding wire ring
-      ctx.strokeStyle = "rgba(0, 245, 212, 0.35)";
+      ctx.strokeStyle = activeTheme.ring;
       ctx.lineWidth = 1.2;
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -1869,7 +2415,7 @@
           if (i === 0) ctx.moveTo(pt.px, pt.py);
           else ctx.lineTo(pt.px, pt.py);
         }
-        ctx.strokeStyle = lat === 0 ? "rgba(0, 245, 212, 0.28)" : "rgba(99, 102, 241, 0.12)";
+        ctx.strokeStyle = lat === 0 ? activeTheme.latZero : activeTheme.latOther;
         ctx.lineWidth = lat === 0 ? 1.4 : 0.8;
         ctx.stroke();
       });
@@ -1885,7 +2431,7 @@
           if (i === 0) ctx.moveTo(pt.px, pt.py);
           else ctx.lineTo(pt.px, pt.py);
         }
-        ctx.strokeStyle = "rgba(99, 102, 241, 0.1)";
+        ctx.strokeStyle = activeTheme.meridian;
         ctx.lineWidth = 0.8;
         ctx.stroke();
       }
@@ -1899,11 +2445,11 @@
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineTo(sweepProj.px, sweepProj.py);
-      ctx.strokeStyle = "rgba(0, 245, 212, 0.8)";
+      ctx.strokeStyle = activeTheme.sweep;
       ctx.lineWidth = 1.8;
       ctx.stroke();
 
-      // 5. Draw Point Cloud Swarm Nodes
+      // 5. Draw Point Cloud Swarm Nodes with theme false-color mapping
       const projectedNodes = lidarGlobeState.nodes.map(n => {
         n.pulse += 0.04;
         return {
@@ -1916,14 +2462,14 @@
 
       projectedNodes.forEach(pt => {
         const norm = (-pt.depth + 1) / 2; // 0 (far) to 1 (near)
-        let color = "rgba(99, 102, 241, 0.35)";
+        let color = activeTheme.nodeFar;
         let nodeSize = 1.2;
 
         if (norm > 0.7) {
-          color = `rgba(0, 245, 212, ${0.6 + pt.pulse * 0.2})`;
+          color = typeof activeTheme.nodeNear === "function" ? activeTheme.nodeNear(pt.pulse) : activeTheme.nodeNear;
           nodeSize = 2.4 + pt.pulse * 0.6;
         } else if (norm > 0.45) {
-          color = `rgba(255, 159, 28, ${0.45 + pt.pulse * 0.15})`;
+          color = typeof activeTheme.nodeMid === "function" ? activeTheme.nodeMid(pt.pulse) : activeTheme.nodeMid;
           nodeSize = 1.8;
         }
 
@@ -1942,7 +2488,7 @@
       });
 
       const frontHubs = projectedHubs.filter(h => h.depth < 0.2);
-      ctx.strokeStyle = "rgba(0, 245, 212, 0.35)";
+      ctx.strokeStyle = activeTheme.hubLine;
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 4]);
       for (let i = 0; i < frontHubs.length - 1; i++) {
@@ -1960,13 +2506,13 @@
         if (!isVisible) return;
 
         const pulseScale = 1 + Math.sin(Date.now() * 0.005) * 0.3;
-        ctx.strokeStyle = "rgba(255, 51, 102, 0.6)";
+        ctx.strokeStyle = activeTheme.hubRing;
         ctx.lineWidth = 1.2;
         ctx.beginPath();
         ctx.arc(hub.px, hub.py, 5 * pulseScale, 0, Math.PI * 2);
         ctx.stroke();
 
-        ctx.fillStyle = "#ff3366";
+        ctx.fillStyle = activeTheme.hubCenter;
         ctx.beginPath();
         ctx.arc(hub.px, hub.py, 2.8, 0, Math.PI * 2);
         ctx.fill();
@@ -2150,9 +2696,7 @@
     function resumeFlightLog(log) {
       playPaperFeed();
       if (!apiKey) {
-        alert("AUTHENTICATION REQUIRED:\nPlease enter your TorBox API token in the top input slot before streaming.");
-        const keyInput = document.getElementById("apiKeyInput");
-        if (keyInput) keyInput.focus();
+        openLidarSettingsModal("TorBox API token required before streaming. Configure key below.");
         return;
       }
       autoPlayBestTorrent(
@@ -2403,7 +2947,11 @@
       const bar = document.getElementById("bingeProgressBar");
       if (!overlay || !pendingNextEpisode) return;
 
-      bingeSecondsRemaining = 10;
+      const prefSec = parseInt(localStorage.getItem("stuvio_pref_binge_sec") !== null ? localStorage.getItem("stuvio_pref_binge_sec") : "10", 10);
+      if (prefSec === 0) return; // Disabled
+      const totalSec = isNaN(prefSec) ? 10 : prefSec;
+
+      bingeSecondsRemaining = totalSec;
       if (secEl) secEl.innerText = String(bingeSecondsRemaining);
       if (titleEl) titleEl.innerText = `S${String(pendingNextEpisode.season).padStart(2,'0')}E${String(pendingNextEpisode.episode).padStart(2,'0')}: ${pendingNextEpisode.title}`;
       if (bar) bar.style.width = "100%";
@@ -2415,7 +2963,7 @@
       bingeCountdownTimer = setInterval(() => {
         bingeSecondsRemaining--;
         if (secEl) secEl.innerText = String(bingeSecondsRemaining);
-        if (bar) bar.style.width = `${(bingeSecondsRemaining / 10) * 100}%`;
+        if (bar) bar.style.width = `${Math.max(0, (bingeSecondsRemaining / totalSec) * 100)}%`;
 
         if (bingeSecondsRemaining <= 0) {
           clearInterval(bingeCountdownTimer);
@@ -2882,9 +3430,7 @@
     async function autoPlayBestTorrent(item, season = null, episode = null, epTitle = null, initialSeek = 0) {
       playPaperFeed();
       if (!apiKey) {
-        alert("AUTHENTICATION REQUIRED:\nPlease enter your TorBox API token in the top input slot before streaming.");
-        const keyInput = document.getElementById("apiKeyInput");
-        if (keyInput) keyInput.focus();
+        openLidarSettingsModal("TorBox API token required before streaming. Configure key below.");
         return;
       }
 
@@ -2917,24 +3463,32 @@
       playerSection.classList.add("flex");
       mediaSub.innerHTML = `
         <span class="text-[var(--depth-mid)] font-bold animate-pulse">⚡ AUTONOMOUS SWARM SCANNER:</span>
-        <span class="text-[var(--ink-primary)] font-mono"> LOCATING PLAYABLE MP4 POINT CLOUD CANDIDATES...</span>
+        <span class="text-[var(--ink-primary)] font-mono"> LOCATING PLAYABLE POINT CLOUD CANDIDATES...</span>
       `;
       scrollPlayerIntoView();
 
       try {
-        // 2. Fetch top MP4 torrents (pre-sorted by seeds descending by server)
-        let searchUrl = `/search-torrents?q=${encodeURIComponent(activeTargetMedia.title)}&format=mp4&limit=30`;
+        // 2. Fetch candidates respecting user container preference (mp4 vs any)
+        const prefFormat = localStorage.getItem("stuvio_pref_format") || "mp4";
+        let searchUrl = `/search-torrents?q=${encodeURIComponent(activeTargetMedia.title)}&limit=30`;
+        if (prefFormat === "mp4") {
+          searchUrl += "&format=mp4";
+        }
         if (activeTargetMedia.season && activeTargetMedia.episode) {
           searchUrl += `&season=${activeTargetMedia.season}&episode=${activeTargetMedia.episode}`;
         }
         const res = await fetch(searchUrl);
         const results = await res.json();
 
-        let candidates = Array.isArray(results) ? results.filter(t => t.is_mp4 !== false && isClientMp4(t.name)) : [];
+        let candidates = Array.isArray(results) ? (
+          prefFormat === "mp4"
+            ? results.filter(t => t.is_mp4 !== false && isClientMp4(t.name))
+            : results
+        ) : [];
 
         if (!candidates.length) {
           mediaSub.innerHTML = `
-            <span class="text-[var(--depth-near)] font-bold">NO DIRECT MP4 SWARMS FOUND</span>
+            <span class="text-[var(--depth-near)] font-bold">NO DIRECT ${prefFormat.toUpperCase()} SWARMS FOUND</span>
             <span class="text-[var(--ink-dim)]"> // SWITCHING TO SWARM RADAR TO VIEW ALL CONTAINERS...</span>
           `;
           setTimeout(() => { selectRecommendation(activeTargetMedia); }, 1400);
@@ -3677,43 +4231,46 @@
           subSelect.appendChild(opt);
         });
 
-        // Auto-load English subtitle if available
-        const engIdx = availableSubtitleTracks.findIndex(s => s.langCode === "eng" || s.label.toLowerCase().includes("english"));
-        if (engIdx >= 0) {
-          subSelect.value = engIdx;
-          loadSubtitleTrack(availableSubtitleTracks[engIdx]);
-        } else if (availableSubtitleTracks.length > 0) {
-          subSelect.value = 0;
-          loadSubtitleTrack(availableSubtitleTracks[0]);
-        } else {
+        // Auto-load preferred subtitle language
+        const prefLang = localStorage.getItem("stuvio_pref_sub_lang") || "eng";
+        if (prefLang === "none") {
           subSelect.value = "none";
-          if (statusEl) statusEl.innerText = "NO CLOUD CAPTION TRACKS LOCATED. SEARCH OPENSUBTITLES OR LOAD LOCAL .SRT.";
+          loadSubtitleTrack(null);
+        } else {
+          const prefIdx = availableSubtitleTracks.findIndex(s => s.langCode === prefLang || (s.label && s.label.toLowerCase().includes(prefLang)));
+          if (prefIdx >= 0) {
+            subSelect.value = prefIdx;
+            loadSubtitleTrack(availableSubtitleTracks[prefIdx]);
+          } else {
+            const engIdx = availableSubtitleTracks.findIndex(s => s.langCode === "eng" || s.label.toLowerCase().includes("english"));
+            if (engIdx >= 0) {
+              subSelect.value = engIdx;
+              loadSubtitleTrack(availableSubtitleTracks[engIdx]);
+            } else if (availableSubtitleTracks.length > 0) {
+              subSelect.value = 0;
+              loadSubtitleTrack(availableSubtitleTracks[0]);
+            } else {
+              subSelect.value = "none";
+              if (statusEl) statusEl.innerText = "NO CLOUD CAPTION TRACKS LOCATED. SEARCH OPENSUBTITLES OR LOAD LOCAL .SRT.";
+            }
+          }
         }
       }
     }
 
     async function searchSubtitlesManual() {
-      playPaperTick();
       const input = document.getElementById("subSearchInput");
-      const q = input?.value.trim();
-      if (!q) {
-        alert("Please enter a movie title or IMDb ID (e.g. Inception or tt1375666).");
-        return;
-      }
+      const statusEl = document.getElementById("subStatusText");
+      const q = input?.value?.trim() || activeTargetMedia?.title || "";
+      if (!q) return;
 
-      const statusEl = document.getElementById("captionStatusText");
-      if (statusEl) statusEl.innerText = `QUERYING OPENSUBTITLES CLOUD FOR "${q}"...`;
-
-      let queryParams = "";
-      if (/^tt\d{5,10}$/i.test(q)) {
-        queryParams = `imdb=${encodeURIComponent(q.toLowerCase())}`;
-      } else {
-        queryParams = `q=${encodeURIComponent(q)}`;
-      }
+      if (statusEl) statusEl.innerText = `QUERYING OPENSUBTITLES REPOSITORY FOR "${q}"...`;
+      playPaperTick();
 
       try {
-        const subRes = await fetch(`/api/subtitles?${queryParams}`);
-        const subData = await subRes.json();
+        const res = await fetch(`/api/subtitles?q=${encodeURIComponent(q)}&limit=25`);
+        const subData = await res.json();
+
         if (subData.success && Array.isArray(subData.subtitles) && subData.subtitles.length) {
           const localTracks = availableSubtitleTracks.filter(s => s.source === "Local" || s.source === "Torrent");
           availableSubtitleTracks = [...localTracks];
@@ -3743,14 +4300,20 @@
               subSelect.appendChild(opt);
             });
 
-            // Auto-load English
-            const engIdx = availableSubtitleTracks.findIndex(s => s.langCode === "eng" || s.label.toLowerCase().includes("english"));
-            if (engIdx >= 0) {
-              subSelect.value = engIdx;
-              loadSubtitleTrack(availableSubtitleTracks[engIdx]);
+            // Auto-load preferred language
+            const prefLang = localStorage.getItem("stuvio_pref_sub_lang") || "eng";
+            if (prefLang === "none") {
+              subSelect.value = "none";
+              loadSubtitleTrack(null);
             } else {
-              subSelect.value = 0;
-              loadSubtitleTrack(availableSubtitleTracks[0]);
+              const prefIdx = availableSubtitleTracks.findIndex(s => s.langCode === prefLang || (s.label && s.label.toLowerCase().includes(prefLang)));
+              if (prefIdx >= 0) {
+                subSelect.value = prefIdx;
+                loadSubtitleTrack(availableSubtitleTracks[prefIdx]);
+              } else {
+                subSelect.value = 0;
+                loadSubtitleTrack(availableSubtitleTracks[0]);
+              }
             }
           }
           if (statusEl) statusEl.innerText = `POPULATED ${subData.subtitles.length} OPENSUBTITLES TRACKS FOR "${subData.imdb || q}"!`;
@@ -3897,7 +4460,7 @@
 
     async function addAndStream(magnet, name, infoHash, imdb) {
       if (!apiKey) {
-        alert("ERROR: AUTH TOKEN MISSING. ENTER TORBOX API KEY IN TOP FIELD.");
+        openLidarSettingsModal("TorBox API token required before streaming. Configure key below.");
         return;
       }
 
@@ -4102,9 +4665,14 @@
     async function fetchLibrary() {
       if (!apiKey) {
         document.getElementById("libraryList").innerHTML = `
-          <p class="text-[var(--ink-faint)] text-xs text-center py-16 font-mono text-base">
-            API KEY NOT CONFIGURED. ENTER TORBOX KEY IN TOP FIELD.
-          </p>
+          <div class="flex flex-col items-center justify-center py-16 gap-3 text-center">
+            <p class="text-[var(--ink-faint)] text-xs font-mono">
+              TORBOX DEBRID NOT AUTHENTICATED // API KEY REQUIRED TO ACCESS CLOUD CACHE
+            </p>
+            <button onclick="openLidarSettingsModal('Configure your TorBox API key to view cloud downloads and streaming history.')" class="depth-btn-primary px-4 py-2 rounded text-xs font-bold font-hud">
+              [ ⚙ CONFIGURE TORBOX CREDENTIALS ]
+            </button>
+          </div>
         `;
         return;
       }
@@ -4566,6 +5134,14 @@
       playerSection.classList.add("hidden");
       playerSection.classList.remove("flex");
     }
+
+    // Global ESC key listener for modal closing
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeLidarSettingsModal();
+        closeEpisodeMatrixModal();
+      }
+    });
 
     // Initialize with Movie Inventory, Key Status & Security Lock State
     updateApiKeyStatusUI();
