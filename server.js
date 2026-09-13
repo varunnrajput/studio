@@ -639,6 +639,252 @@ async function getPopularManga() {
   return popularCache.manga.data || [];
 }
 
+// =========================================================================
+// IN-BROWSER MANGA ENGINE (WEEBCENTRAL & MANGADEX DUAL SOURCE)
+// =========================================================================
+
+const mangaSearchCache = new Map();
+const mangaChaptersCache = new Map();
+const mangaPagesCache = new Map();
+const MANGA_CACHE_TTL = 1000 * 60 * 60; // 1 hour
+
+async function fetchMangaText(url, headers = {}, timeoutMs = 6500) {
+  try {
+    if (typeof fetch === "function") {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          ...headers
+        },
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (!res.ok) return null;
+      return await res.text();
+    }
+  } catch (e) {}
+  return null;
+}
+
+function normalizeMangaTitle(t) {
+  return (t || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+async function searchMangaEngine(query, altQuery = "") {
+  const cleanQ = (query || "").trim();
+  const cleanAlt = (altQuery || "").trim();
+  if (!cleanQ && !cleanAlt) return null;
+
+  const cacheKey = `${cleanQ.toLowerCase()}|${cleanAlt.toLowerCase()}`;
+  const cached = mangaSearchCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < MANGA_CACHE_TTL)) {
+    return cached.data;
+  }
+
+  const queriesToTry = [cleanQ];
+  if (cleanAlt && cleanAlt.toLowerCase() !== cleanQ.toLowerCase()) {
+    queriesToTry.push(cleanAlt);
+  }
+
+  // 1. Try WeebCentral with primary and alternative queries
+  for (const q of queriesToTry) {
+    try {
+      const sUrl = `https://weebcentral.com/search/data?author=&text=${encodeURIComponent(q)}&sort=Best+Match&order=Ascending&official=Any&anime=Any&adult=Any&display_mode=Full+Display`;
+      const sHtml = await fetchMangaText(sUrl);
+      if (sHtml) {
+        const regex = /<article[\s\S]*?<a[^>]+href="(https:\/\/weebcentral\.com\/series\/([^\/"]+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+        let m;
+        const candidates = [];
+        while ((m = regex.exec(sHtml)) !== null) {
+          const fullLink = m[1];
+          const seriesId = m[2];
+          const rawTitle = m[3].replace(/<[^>]+>/g, '').trim().split('\n').map(s => s.trim()).filter(Boolean).pop();
+          candidates.push({ id: seriesId, title: rawTitle, source: "weebcentral", url: fullLink });
+        }
+
+        if (candidates.length > 0) {
+          const normQ = normalizeMangaTitle(q);
+          let best = candidates.find(c => normalizeMangaTitle(c.title) === normQ);
+          if (!best) {
+            best = candidates.find(c => {
+              const normT = normalizeMangaTitle(c.title);
+              return normT.startsWith(normQ) || normQ.startsWith(normT);
+            });
+          }
+          if (!best) {
+            best = candidates.find(c => {
+              const normT = normalizeMangaTitle(c.title);
+              return normT.includes(normQ) || normQ.includes(normT);
+            });
+          }
+          if (!best) best = candidates[0];
+
+          const result = {
+            matched: true,
+            source: "weebcentral",
+            id: best.id,
+            title: best.title,
+            query: q
+          };
+          mangaSearchCache.set(cacheKey, { timestamp: Date.now(), data: result });
+          return result;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 2. Fallback: MangaDex Search
+  for (const q of queriesToTry) {
+    try {
+      const mdUrl = `https://api.mangadex.org/manga?title=${encodeURIComponent(q)}&limit=10&order[relevance]=desc&contentRating[]=safe&contentRating[]=suggestive`;
+      const mdText = await fetchMangaText(mdUrl);
+      if (mdText) {
+        const mdJson = JSON.parse(mdText);
+        if (mdJson.data && mdJson.data.length > 0) {
+          const normQ = normalizeMangaTitle(q);
+          const best = mdJson.data.find(m => {
+            const t = normalizeMangaTitle(m.attributes.title?.en || Object.values(m.attributes.title || {})[0] || "");
+            return t === normQ;
+          }) || mdJson.data[0];
+
+          const title = best.attributes.title?.en || Object.values(best.attributes.title || {})[0] || q;
+          const result = {
+            matched: true,
+            source: "mangadex",
+            id: best.id,
+            title: title,
+            query: q
+          };
+          mangaSearchCache.set(cacheKey, { timestamp: Date.now(), data: result });
+          return result;
+        }
+      }
+    } catch (e) {}
+  }
+
+  return { matched: false, error: "Manga not found" };
+}
+
+async function getMangaChaptersEngine(seriesId, source = "weebcentral") {
+  const cacheKey = `${source}:${seriesId}`;
+  const cached = mangaChaptersCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < MANGA_CACHE_TTL * 2)) {
+    return cached.data;
+  }
+
+  if (source === "weebcentral") {
+    try {
+      const chUrl = `https://weebcentral.com/series/${seriesId}/full-chapter-list`;
+      const chHtml = await fetchMangaText(chUrl, {}, 8000);
+      if (chHtml) {
+        const chRegex = /<a[^>]+href="\/chapters\/([A-Za-z0-9]+)"[\s\S]*?<span[^>]*>(Chapter\s*[^<]+)<\/span>/gi;
+        let m;
+        const chapters = [];
+        while ((m = chRegex.exec(chHtml)) !== null) {
+          const chId = m[1];
+          const rawText = m[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+          const numMatch = rawText.match(/Chapter\s*([0-9.]+)/i);
+          const chapterNum = numMatch ? parseFloat(numMatch[1]) : 0;
+          chapters.push({
+            id: chId,
+            title: rawText,
+            number: chapterNum,
+            source: "weebcentral"
+          });
+        }
+        // Natural numerical order ascending (Chapter 1, 2, ..., latest)
+        chapters.sort((a, b) => a.number - b.number);
+        mangaChaptersCache.set(cacheKey, { timestamp: Date.now(), data: chapters });
+        return chapters;
+      }
+    } catch (e) {}
+  }
+
+  // MangaDex fallback
+  try {
+    const mdFeedUrl = `https://api.mangadex.org/manga/${seriesId}/feed?translatedLanguage[]=en&order[chapter]=asc&limit=300&contentRating[]=safe&contentRating[]=suggestive`;
+    const mdText = await fetchMangaText(mdFeedUrl, {}, 8000);
+    if (mdText) {
+      const mdJson = JSON.parse(mdText);
+      const chapterMap = new Map();
+      (mdJson.data || []).forEach(ch => {
+        const num = ch.attributes.chapter;
+        if (!num) return;
+        if (!chapterMap.has(num) && ch.attributes.pages > 0 && !ch.attributes.externalUrl) {
+          chapterMap.set(num, {
+            id: ch.id,
+            title: `Chapter ${num}${ch.attributes.title ? ': ' + ch.attributes.title : ''}`,
+            number: parseFloat(num),
+            source: "mangadex"
+          });
+        }
+      });
+      const chapters = Array.from(chapterMap.values()).sort((a, b) => a.number - b.number);
+      mangaChaptersCache.set(cacheKey, { timestamp: Date.now(), data: chapters });
+      return chapters;
+    }
+  } catch (e) {}
+
+  return [];
+}
+
+async function getMangaPagesEngine(chapterId, source = "weebcentral", seriesId = "") {
+  const cacheKey = `${source}:${chapterId}`;
+  const cached = mangaPagesCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < MANGA_CACHE_TTL * 2)) {
+    return cached.data;
+  }
+
+  if (source === "weebcentral") {
+    try {
+      const pUrl = `https://weebcentral.com/chapters/${chapterId}/images?reading_style=long_strip`;
+      const pHtml = await fetchMangaText(pUrl, {}, 8000);
+      if (pHtml) {
+        const imgs = [...pHtml.matchAll(/<img[^>]+src="([^"]+)"[^>]*alt="Page\s*(\d+)"/gi)];
+        const pages = imgs.map((x, idx) => ({
+          page: idx + 1,
+          imageUrl: x[1]
+        }));
+        const result = {
+          chapterId,
+          source: "weebcentral",
+          totalPages: pages.length,
+          pages
+        };
+        mangaPagesCache.set(cacheKey, { timestamp: Date.now(), data: result });
+        return result;
+      }
+    } catch (e) {}
+  }
+
+  // MangaDex fallback
+  try {
+    const atHomeUrl = `https://api.mangadex.org/at-home/server/${chapterId}`;
+    const atHomeText = await fetchMangaText(atHomeUrl, {}, 8000);
+    if (atHomeText) {
+      const data = JSON.parse(atHomeText);
+      const baseUrl = data.baseUrl;
+      const hash = data.chapter?.hash;
+      const pages = (data.chapter?.data || []).map((file, idx) => ({
+        page: idx + 1,
+        imageUrl: `${baseUrl}/data/${hash}/${file}`
+      }));
+      const result = {
+        chapterId,
+        source: "mangadex",
+        totalPages: pages.length,
+        pages
+      };
+      mangaPagesCache.set(cacheKey, { timestamp: Date.now(), data: result });
+      return result;
+    }
+  } catch (e) {}
+
+  return { chapterId, totalPages: 0, pages: [] };
+}
+
 // Helper: Strict classification of browser-playable MP4 containers (H.264 / AAC, 8-bit)
 function isBrowserMp4(name, isYts = false) {
   if (isYts) return true;
@@ -1601,7 +1847,88 @@ async function handler(req, res) {
     return;
   }
 
-  // 5. TorBox API Forwarding (/api/...)
+  // 5. In-Browser Manga Reader Engine Endpoints
+  if (pathname === "/api/manga/search") {
+    const q = urlParams.searchParams.get("q") || reqUrlObj.searchParams.get("q") || "";
+    const alt = urlParams.searchParams.get("alt") || reqUrlObj.searchParams.get("alt") || "";
+    try {
+      const result = await searchMangaEngine(q, alt);
+      res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+      res.end(JSON.stringify(result || { matched: false, error: "Not found" }));
+    } catch (e) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ matched: false, error: e.message }));
+    }
+    return;
+  }
+
+  if (pathname === "/api/manga/chapters") {
+    const id = urlParams.searchParams.get("id") || reqUrlObj.searchParams.get("id") || "";
+    const source = urlParams.searchParams.get("source") || reqUrlObj.searchParams.get("source") || "weebcentral";
+    try {
+      const chapters = await getMangaChaptersEngine(id, source);
+      res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+      res.end(JSON.stringify({ success: true, count: chapters.length, chapters }));
+    } catch (e) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ success: false, error: e.message, chapters: [] }));
+    }
+    return;
+  }
+
+  if (pathname === "/api/manga/pages") {
+    const chapterId = urlParams.searchParams.get("chapterId") || reqUrlObj.searchParams.get("chapterId") || "";
+    const source = urlParams.searchParams.get("source") || reqUrlObj.searchParams.get("source") || "weebcentral";
+    try {
+      const pagesData = await getMangaPagesEngine(chapterId, source);
+      res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+      res.end(JSON.stringify({ success: true, ...pagesData }));
+    } catch (e) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ success: false, error: e.message, totalPages: 0, pages: [] }));
+    }
+    return;
+  }
+
+  if (pathname === "/api/manga/image-proxy") {
+    const targetUrl = urlParams.searchParams.get("url") || reqUrlObj.searchParams.get("url");
+    if (!targetUrl) {
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end("Missing url parameter");
+      return;
+    }
+    try {
+      const parsed = new URL(targetUrl);
+      const client = parsed.protocol === "http:" ? http : https;
+      const options = {
+        hostname: parsed.hostname,
+        path: parsed.pathname + parsed.search,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Referer": parsed.origin + "/",
+          "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+        }
+      };
+      const pReq = client.get(options, (pRes) => {
+        res.writeHead(pRes.statusCode, {
+          "Content-Type": pRes.headers["content-type"] || "image/png",
+          "Cache-Control": "public, max-age=86400",
+          "Access-Control-Allow-Origin": "*"
+        });
+        pRes.pipe(res);
+      });
+      pReq.on("error", (err) => {
+        res.writeHead(502, { "Content-Type": "text/plain" });
+        res.end("Image proxy error: " + err.message);
+      });
+    } catch (err) {
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end("Invalid image URL");
+    }
+    return;
+  }
+
+  // 6. TorBox API Forwarding (/api/...)
   if (pathname.startsWith("/api/")) {
     const forwardParams = new URLSearchParams(reqUrlObj.search);
     for (const [k, v] of urlParams.searchParams.entries()) {

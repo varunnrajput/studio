@@ -1453,6 +1453,187 @@
   </div>
 
   <!-- ============================================================
+       IN-BROWSER CYBERNETIC MANGA READER HUD MODAL
+       ============================================================ -->
+  <div id="mangaReaderModal" class="fixed inset-0 z-50 bg-black/95 backdrop-blur-md hidden flex-col select-none overflow-hidden" role="dialog" aria-modal="true">
+    <!-- Cybernetic Scanning Reticles & Glow Lines -->
+    <div class="card-reticle card-reticle-tl"></div>
+    <div class="card-reticle card-reticle-tr"></div>
+    <div class="card-reticle card-reticle-bl"></div>
+    <div class="card-reticle card-reticle-br"></div>
+    <div class="scanline-overlay pointer-events-none opacity-40"></div>
+
+    <!-- TOP TELEMETRY / CONTROL DOCK -->
+    <header id="mangaReaderHeader" class="relative z-20 flex flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-6 sm:py-2.5 bg-black/85 border-b border-[var(--depth-border)] shadow-lg transition-all duration-300">
+      <!-- Title & Live Status -->
+      <div class="flex items-center gap-2.5 min-w-0">
+        <span class="w-2 h-2 rounded-full bg-[var(--depth-mid)] animate-ping"></span>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <h3 id="mangaReaderTitle" class="text-xs sm:text-sm font-bold text-[var(--ink-primary)] font-hud uppercase truncate max-w-[180px] sm:max-w-xs">
+              MANGA VIEWER
+            </h3>
+            <span id="mangaSourceBadge" class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[var(--depth-mid)]/15 border border-[var(--depth-mid)]/50 text-[var(--depth-mid)] font-bold">
+              EN SCAN
+            </span>
+          </div>
+          <p id="mangaReaderSub" class="text-[9px] font-mono text-[var(--ink-dim)] truncate">
+            SYNCHRONIZING CHAPTER STREAM...
+          </p>
+        </div>
+      </div>
+
+      <!-- Chapter & Page Selection Controls (User Requirement) -->
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- Chapter Selector Dropdown -->
+        <div class="flex items-center gap-1 bg-black/60 border border-[var(--depth-border)] px-2 py-1 rounded">
+          <label for="mangaChapterSelect" class="text-[10px] font-hud text-[var(--depth-mid)] uppercase tracking-wider font-bold">
+            CH:
+          </label>
+          <select id="mangaChapterSelect" onchange="onMangaChapterSelect(this.value)" class="bg-black text-[var(--ink-primary)] font-mono text-xs border-0 focus:outline-none cursor-pointer max-w-[140px] sm:max-w-[180px]">
+            <option value="">LOADING...</option>
+          </select>
+        </div>
+
+        <!-- Page Selector Dropdown -->
+        <div class="flex items-center gap-1 bg-black/60 border border-[var(--depth-border)] px-2 py-1 rounded">
+          <label for="mangaPageSelect" class="text-[10px] font-hud text-[var(--depth-near)] uppercase tracking-wider font-bold">
+            PG:
+          </label>
+          <select id="mangaPageSelect" onchange="onMangaPageSelect(this.value)" class="bg-black text-[var(--ink-primary)] font-mono text-xs border-0 focus:outline-none cursor-pointer max-w-[110px]">
+            <option value="0">1 / 1</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- View & Utility Toggles -->
+      <div class="flex items-center gap-1 sm:gap-2">
+        <!-- Reading Mode Toggle: Single Page vs Continuous Strip -->
+        <button id="btnMangaMode" onclick="toggleMangaReadingMode()" class="depth-btn px-2.5 py-1 rounded text-[10px] sm:text-xs font-mono text-[var(--ink-primary)] hover:border-[var(--depth-mid)] active:scale-95 transition" title="Toggle Reading Mode: Single Page vs Long Strip">
+          <span id="btnMangaModeText">📄 SINGLE</span>
+        </button>
+
+        <!-- Fit Toggle: Fit Width vs Fit Height -->
+        <button id="btnMangaFit" onclick="toggleMangaFitMode()" class="depth-btn px-2.5 py-1 rounded text-[10px] sm:text-xs font-mono text-[var(--ink-primary)] hover:border-[var(--depth-mid)] active:scale-95 transition" title="Toggle Scale: Fit Width / Fit Height">
+          <span id="btnMangaFitText">↕ FIT H</span>
+        </button>
+
+        <!-- Fullscreen Toggle -->
+        <button onclick="toggleMangaFullscreen()" class="depth-btn px-2.5 py-1 rounded text-[10px] sm:text-xs font-mono text-[var(--ink-dim)] hover:text-white active:scale-95 transition" title="Fullscreen [F]">
+          ⛶
+        </button>
+
+        <!-- Exit Button -->
+        <button onclick="closeMangaReader()" class="depth-btn px-3 py-1 rounded text-[10px] sm:text-xs font-hud font-bold text-[var(--depth-coral)] border-[var(--depth-coral)]/50 hover:bg-[var(--depth-coral)]/20 active:scale-95 transition" title="Exit Manga Reader [Esc]">
+          ✕ EXIT
+        </button>
+      </div>
+    </header>
+
+    <!-- MAIN READING VIEWPORT -->
+    <div id="mangaViewportContainer" class="relative flex-1 w-full h-full overflow-y-auto overflow-x-hidden flex flex-col items-center justify-start bg-[#050508] p-2 sm:p-4">
+      
+      <!-- LOADING & STATUS TELEMETRY OVERLAY -->
+      <div id="mangaLoadingOverlay" class="absolute inset-0 z-30 bg-black/85 flex flex-col items-center justify-center gap-3 transition-opacity duration-300">
+        <div class="w-12 h-12 rounded-full border-2 border-[var(--depth-mid)]/20 border-t-[var(--depth-mid)] animate-spin"></div>
+        <div class="text-center font-mono">
+          <p id="mangaLoadingMsg" class="text-xs text-[var(--depth-mid)] font-bold tracking-widest uppercase">
+            ACQUIRING MANGA SCANS...
+          </p>
+          <p class="text-[10px] text-[var(--ink-dim)] mt-1">
+            VERIFYING TRANSLATION STREAMS // 100% ENGLISH
+          </p>
+        </div>
+      </div>
+
+      <!-- ERROR / RETRY NOTIFICATION -->
+      <div id="mangaErrorOverlay" class="absolute inset-0 z-30 bg-black/90 hidden flex-col items-center justify-center p-6 text-center gap-3">
+        <span class="text-3xl">⚠️</span>
+        <h4 class="text-sm font-bold text-[var(--depth-coral)] font-hud uppercase">SCAN STREAM DISRUPTION</h4>
+        <p id="mangaErrorMsg" class="text-xs text-[var(--ink-dim)] font-mono max-w-md">
+          Unable to retrieve chapters for this title. Alternate sources can be queried.
+        </p>
+        <button onclick="retryMangaLoad()" class="depth-btn-primary px-4 py-2 rounded text-xs font-hud font-bold uppercase mt-2 active:scale-95">
+          ↻ RETRY SENSOR SCAN
+        </button>
+      </div>
+
+      <!-- SINGLE PAGE VIEWER -->
+      <div id="mangaSinglePageWrapper" class="relative w-full h-full flex items-center justify-center flex-1">
+        <!-- Rangefinder Reticles on Page Image Frame -->
+        <div id="mangaPageCard" class="relative group max-w-full max-h-full flex items-center justify-center border border-[var(--depth-border)] shadow-2xl bg-black rounded-lg overflow-hidden">
+          <div class="card-reticle card-reticle-tl"></div>
+          <div class="card-reticle card-reticle-tr"></div>
+          <div class="card-reticle card-reticle-bl"></div>
+          <div class="card-reticle card-reticle-br"></div>
+
+          <!-- The Current Page Image -->
+          <img 
+            id="mangaPageImg" 
+            src="" 
+            alt="Manga Page" 
+            referrerpolicy="no-referrer"
+            class="object-contain max-h-[82vh] max-w-full transition-all duration-150 select-none cursor-pointer"
+            onload="onMangaPageLoaded()"
+            onerror="onMangaImgError(this)"
+          />
+
+          <!-- Click Zones for Seamless One-Click Navigation -->
+          <div onclick="prevMangaPage()" class="absolute left-0 top-0 w-2/5 h-full cursor-w-resize z-10 group/left flex items-center justify-start pl-4" title="Previous Page [← / A]">
+            <span class="opacity-0 group-hover/left:opacity-75 transition-opacity duration-200 bg-black/75 text-[var(--depth-mid)] font-mono text-[10px] px-2 py-1 rounded border border-[var(--depth-mid)]/40">
+              ◀ PREV
+            </span>
+          </div>
+
+          <div onclick="nextMangaPage()" class="absolute right-0 top-0 w-2/5 h-full cursor-e-resize z-10 group/right flex items-center justify-end pr-4" title="Next Page [→ / D / Space]">
+            <span class="opacity-0 group-hover/right:opacity-75 transition-opacity duration-200 bg-black/75 text-[var(--depth-mid)] font-mono text-[10px] px-2 py-1 rounded border border-[var(--depth-mid)]/40">
+              NEXT ▶
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONTINUOUS STRIP VIEWER (LONG STRIP / WEBTOON MODE) -->
+      <div id="mangaStripContainer" class="hidden flex-col items-center gap-2 w-full max-w-3xl pb-16">
+        <!-- Dynamically injected img tags for all pages -->
+      </div>
+    </div>
+
+    <!-- BOTTOM HUD DOCK & NAVIGATION -->
+    <footer id="mangaReaderFooter" class="relative z-20 flex flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-6 sm:py-2 bg-black/85 border-t border-[var(--depth-border)] shadow-inner text-xs font-mono">
+      <!-- Chapter Jump Nav -->
+      <div class="flex items-center gap-1 sm:gap-2">
+        <button onclick="prevMangaChapter()" id="btnPrevChapter" class="depth-btn px-2.5 py-1 rounded text-[10px] sm:text-xs font-mono text-[var(--ink-dim)] hover:text-white active:scale-95" title="Previous Chapter [ [ ]">
+          ◀◀ CH
+        </button>
+        <button onclick="prevMangaPage()" id="btnPrevPage" class="depth-btn px-3 py-1 rounded text-[10px] sm:text-xs font-bold text-[var(--depth-mid)] hover:border-[var(--depth-mid)] active:scale-95" title="Previous Page [← / A]">
+          ◀ PREV
+        </button>
+      </div>
+
+      <!-- Center Page Telemetry -->
+      <div class="flex items-center gap-2 text-center">
+        <span id="mangaFooterPageBadge" class="px-2.5 py-0.5 rounded bg-[var(--depth-mid)]/15 border border-[var(--depth-mid)]/40 text-[var(--depth-mid)] font-bold text-xs">
+          PAGE 1 / 1
+        </span>
+        <span class="hidden md:inline text-[10px] text-[var(--ink-dim)]">
+          • USE [← / → / A / D / SPACE] • [ESC] TO CLOSE
+        </span>
+      </div>
+
+      <!-- Page & Next Chapter Nav -->
+      <div class="flex items-center gap-1 sm:gap-2">
+        <button onclick="nextMangaPage()" id="btnNextPage" class="depth-btn-primary px-3 py-1 rounded text-[10px] sm:text-xs font-bold text-black uppercase active:scale-95" title="Next Page [→ / D / Space]">
+          NEXT ▶
+        </button>
+        <button onclick="nextMangaChapter()" id="btnNextChapter" class="depth-btn px-2.5 py-1 rounded text-[10px] sm:text-xs font-mono text-[var(--ink-dim)] hover:text-white active:scale-95" title="Next Chapter [ ] ]">
+          CH ▶▶
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ============================================================
        APPLICATION LOGIC & SPATIAL SONAR AUDIO SYNTHESIZER
        ============================================================ -->
   <script>
@@ -3167,9 +3348,9 @@
             <!-- Interactive Action Buttons -->
             <div class="flex flex-wrap items-center gap-3 pt-2">
               ${(type === 'manga' || item.type === 'Manga') ? `
-                <a href="${item.mangaUrl || ('https://mangadex.org/search?q=' + encodeURIComponent(item.title))}" target="_blank" rel="noopener noreferrer" class="btn-hero-read depth-btn-primary px-5 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-bold tracking-wider font-hud uppercase flex items-center gap-2 active:scale-95 transition text-black" onclick="event.stopPropagation(); playPaperFeed();">
-                  <span>📖 READ ON MANGADEX</span>
-                </a>
+                <button class="btn-hero-read depth-btn-primary px-5 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-bold tracking-wider font-hud uppercase flex items-center gap-2 active:scale-95 transition text-black">
+                  <span>📖 READ ONLINE</span>
+                </button>
                 <button class="btn-hero-radar depth-btn px-4 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-mono tracking-wider uppercase text-[var(--ink-primary)] hover:border-[var(--depth-mid)] active:scale-95 transition flex items-center gap-1.5">
                   <span>[ 🔍 SWARM RADAR // SCANS ]</span>
                 </button>
@@ -3196,9 +3377,11 @@
         const playBtn = slide.querySelector(".btn-hero-play");
         const radarBtn = slide.querySelector(".btn-hero-radar");
         const epBtn = slide.querySelector(".btn-hero-episodes");
+        const readBtn = slide.querySelector(".btn-hero-read");
         if (playBtn) playBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); autoPlayBestTorrent(item); };
         if (radarBtn) radarBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); selectRecommendation(item); };
         if (epBtn) epBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); openEpisodeMatrix(item); };
+        if (readBtn) readBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); openMangaReader(item); };
 
         track.appendChild(slide);
 
@@ -3309,7 +3492,7 @@
           card.onclick = () => { 
             playPaperFeed(); 
             if (type === 'manga' || item.type === 'Manga') {
-              selectRecommendation(item);
+              openMangaReader(item);
             } else {
               autoPlayBestTorrent(item); 
             }
@@ -3356,9 +3539,9 @@
 
             <div class="flex flex-col gap-1 w-full pt-1">
               ${(type === 'manga' || item.type === 'Manga') ? `
-                <a href="${item.mangaUrl || ('https://mangadex.org/search?q=' + encodeURIComponent(item.title))}" target="_blank" rel="noopener noreferrer" class="depth-btn-primary w-full py-1.5 rounded text-[10px] tracking-wider uppercase font-bold active:scale-95 flex items-center justify-center gap-1 font-hud text-black" onclick="event.stopPropagation(); playPaperFeed();">
-                  <span>📖 READ ON MANGADEX</span>
-                </a>
+                <button class="btn-read-manga depth-btn-primary w-full py-1.5 rounded text-[10px] tracking-wider uppercase font-bold active:scale-95 flex items-center justify-center gap-1 font-hud text-black">
+                  <span>📖 READ CHAPTERS</span>
+                </button>
                 <button class="btn-browse depth-btn w-full py-1 rounded text-[10px] tracking-wider uppercase font-bold text-[var(--ink-primary)] hover:border-[var(--depth-mid)] active:scale-95 flex items-center justify-center gap-1 font-mono">
                   <span>[ 🔍 SWARM RADAR // SCANS ]</span>
                 </button>
@@ -3381,9 +3564,11 @@
           const autoPlayBtn = card.querySelector(".btn-autoplay");
           const browseBtn = card.querySelector(".btn-browse");
           const episodesBtn = card.querySelector(".btn-episodes");
+          const readMangaBtn = card.querySelector(".btn-read-manga");
           if (autoPlayBtn) autoPlayBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); autoPlayBestTorrent(item); };
           if (browseBtn) browseBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); selectRecommendation(item); };
           if (episodesBtn) episodesBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); openEpisodeMatrix(item); };
+          if (readMangaBtn) readMangaBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); openMangaReader(item); };
 
           catalogGrid.appendChild(card);
         });
@@ -5170,8 +5355,482 @@
       playerSection.classList.remove("flex");
     }
 
-    // Global ESC key listener for modal closing
+    // =========================================================================
+    // IN-BROWSER CYBERNETIC MANGA READER ENGINE
+    // =========================================================================
+
+    let currentMangaState = {
+      item: null,
+      seriesId: null,
+      seriesTitle: "",
+      source: "weebcentral",
+      chapters: [],
+      currentChapterIndex: 0,
+      currentChapter: null,
+      pages: [],
+      currentPageIndex: 0,
+      readingMode: "single", // "single" or "strip"
+      fitMode: "height",     // "height" or "width"
+      isLoading: false
+    };
+
+    async function openMangaReader(item) {
+      if (!item || !item.title) return;
+      currentMangaState.item = item;
+
+      // Pause background video streams if active
+      if (typeof artPlayerInstance !== "undefined" && artPlayerInstance) {
+        try { artPlayerInstance.pause(); } catch(e){}
+      }
+
+      const modal = document.getElementById("mangaReaderModal");
+      if (!modal) return;
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      document.body.style.overflow = "hidden";
+
+      const titleEl = document.getElementById("mangaReaderTitle");
+      if (titleEl) titleEl.innerText = item.title.toUpperCase();
+      const subEl = document.getElementById("mangaReaderSub");
+      if (subEl) subEl.innerText = "SYNCHRONIZING CHAPTER STREAM...";
+      const badgeEl = document.getElementById("mangaSourceBadge");
+      if (badgeEl) badgeEl.innerText = "SEARCHING...";
+
+      const loadingOverlay = document.getElementById("mangaLoadingOverlay");
+      const loadingMsg = document.getElementById("mangaLoadingMsg");
+      const errorOverlay = document.getElementById("mangaErrorOverlay");
+      if (loadingOverlay) loadingOverlay.classList.remove("hidden");
+      if (loadingMsg) loadingMsg.innerText = `SEARCHING VERIFIED ENGLISH EDITIONS FOR "${item.title.toUpperCase()}"...`;
+      if (errorOverlay) errorOverlay.classList.add("hidden");
+
+      try {
+        const altQ = item.romaji || "";
+        const searchRes = await fetch(`/api/manga/search?q=${encodeURIComponent(item.title)}&alt=${encodeURIComponent(altQ)}`);
+        const searchData = await searchRes.json();
+
+        if (!searchData.matched || !searchData.id) {
+          throw new Error(`No verified English manga editions found for "${item.title}".`);
+        }
+
+        currentMangaState.seriesId = searchData.id;
+        currentMangaState.seriesTitle = searchData.title;
+        currentMangaState.source = searchData.source || "weebcentral";
+
+        if (titleEl) titleEl.innerText = searchData.title.toUpperCase();
+        if (badgeEl) badgeEl.innerText = `${currentMangaState.source.toUpperCase()} // EN`;
+        if (loadingMsg) loadingMsg.innerText = `FETCHING ENGLISH CHAPTER ROSTER (${searchData.title})...`;
+
+        // Fetch English chapters
+        const chRes = await fetch(`/api/manga/chapters?id=${encodeURIComponent(searchData.id)}&source=${encodeURIComponent(currentMangaState.source)}`);
+        const chData = await chRes.json();
+
+        if (!chData.chapters || !chData.chapters.length) {
+          throw new Error(`Zero English chapters returned for "${searchData.title}".`);
+        }
+
+        currentMangaState.chapters = chData.chapters;
+
+        // Populate Chapter Dropdown
+        const chSelect = document.getElementById("mangaChapterSelect");
+        if (chSelect) {
+          chSelect.innerHTML = currentMangaState.chapters.map((ch, idx) => {
+            const cleanName = (ch.title || `Chapter ${idx + 1}`).replace(/^Chapter\s*[0-9.]+\s*[:\-]?\s*/i, "");
+            const label = cleanName ? `${ch.title}: ${cleanName}` : ch.title;
+            return `<option value="${idx}">${label}</option>`;
+          }).join("");
+        }
+
+        // Check for saved reading position
+        let initialChIdx = 0;
+        let initialPgIdx = 0;
+        try {
+          const savedKey = `stuvio_manga_pos_${currentMangaState.seriesId}`;
+          const savedRaw = localStorage.getItem(savedKey);
+          if (savedRaw) {
+            const saved = JSON.parse(savedRaw);
+            if (saved && typeof saved.chIdx === "number" && saved.chIdx >= 0 && saved.chIdx < currentMangaState.chapters.length) {
+              initialChIdx = saved.chIdx;
+              initialPgIdx = saved.pgIdx || 0;
+            }
+          }
+        } catch(e){}
+
+        // Load the chosen chapter
+        await loadMangaChapter(initialChIdx, initialPgIdx);
+
+      } catch (err) {
+        if (loadingOverlay) loadingOverlay.classList.add("hidden");
+        if (errorOverlay) {
+          errorOverlay.classList.remove("hidden");
+          errorOverlay.classList.add("flex");
+          const errMsg = document.getElementById("mangaErrorMsg");
+          if (errMsg) errMsg.innerText = err.message || "Failed to load manga chapters.";
+        }
+      }
+    }
+
+    async function loadMangaChapter(chIdx, targetPage = 0) {
+      if (!currentMangaState.chapters || !currentMangaState.chapters.length) return;
+      const validIdx = Math.max(0, Math.min(chIdx, currentMangaState.chapters.length - 1));
+      currentMangaState.currentChapterIndex = validIdx;
+      currentMangaState.currentChapter = currentMangaState.chapters[validIdx];
+
+      const chSelect = document.getElementById("mangaChapterSelect");
+      if (chSelect) chSelect.value = validIdx;
+
+      // Update Chapter Prev/Next buttons
+      const btnPrevCh = document.getElementById("btnPrevChapter");
+      const btnNextCh = document.getElementById("btnNextChapter");
+      if (btnPrevCh) btnPrevCh.disabled = (validIdx === 0);
+      if (btnNextCh) btnNextCh.disabled = (validIdx === currentMangaState.chapters.length - 1);
+
+      const loadingOverlay = document.getElementById("mangaLoadingOverlay");
+      const loadingMsg = document.getElementById("mangaLoadingMsg");
+      const errorOverlay = document.getElementById("mangaErrorOverlay");
+      if (loadingOverlay) loadingOverlay.classList.remove("hidden");
+      if (loadingMsg) loadingMsg.innerText = `BUFFERING ${currentMangaState.currentChapter.title.toUpperCase()} SCANS...`;
+      if (errorOverlay) errorOverlay.classList.add("hidden");
+
+      try {
+        const pRes = await fetch(`/api/manga/pages?chapterId=${encodeURIComponent(currentMangaState.currentChapter.id)}&source=${encodeURIComponent(currentMangaState.source)}&seriesId=${encodeURIComponent(currentMangaState.seriesId)}`);
+        const pData = await pRes.json();
+
+        if (!pData.pages || !pData.pages.length) {
+          throw new Error(`No pages found in ${currentMangaState.currentChapter.title}.`);
+        }
+
+        currentMangaState.pages = pData.pages;
+
+        // Populate Page Dropdown
+        const pgSelect = document.getElementById("mangaPageSelect");
+        if (pgSelect) {
+          pgSelect.innerHTML = currentMangaState.pages.map((p, idx) => `
+            <option value="${idx}">Page ${idx + 1} / ${currentMangaState.pages.length}</option>
+          `).join("");
+        }
+
+        // Determine destination page
+        let destPg = targetPage;
+        if (destPg === -1) {
+          destPg = currentMangaState.pages.length - 1; // Last page
+        } else {
+          destPg = Math.max(0, Math.min(destPg, currentMangaState.pages.length - 1));
+        }
+
+        if (currentMangaState.readingMode === "single") {
+          const singleWrapper = document.getElementById("mangaSinglePageWrapper");
+          const stripContainer = document.getElementById("mangaStripContainer");
+          if (singleWrapper) singleWrapper.classList.remove("hidden");
+          if (stripContainer) stripContainer.classList.add("hidden");
+
+          renderMangaPage(destPg);
+        } else {
+          renderMangaStrip();
+        }
+
+        if (loadingOverlay) loadingOverlay.classList.add("hidden");
+
+        // Save position
+        saveMangaPosition(validIdx, destPg);
+
+      } catch (err) {
+        if (loadingOverlay) loadingOverlay.classList.add("hidden");
+        if (errorOverlay) {
+          errorOverlay.classList.remove("hidden");
+          errorOverlay.classList.add("flex");
+          const errMsg = document.getElementById("mangaErrorMsg");
+          if (errMsg) errMsg.innerText = err.message || "Failed to load chapter pages.";
+        }
+      }
+    }
+
+    function renderMangaPage(pageIdx) {
+      if (!currentMangaState.pages || !currentMangaState.pages.length) return;
+      const validPg = Math.max(0, Math.min(pageIdx, currentMangaState.pages.length - 1));
+      currentMangaState.currentPageIndex = validPg;
+
+      const pgSelect = document.getElementById("mangaPageSelect");
+      if (pgSelect) pgSelect.value = validPg;
+
+      const pageBadge = document.getElementById("mangaFooterPageBadge");
+      if (pageBadge) pageBadge.innerText = `PAGE ${validPg + 1} / ${currentMangaState.pages.length}`;
+
+      const subEl = document.getElementById("mangaReaderSub");
+      if (subEl && currentMangaState.currentChapter) {
+        subEl.innerText = `${currentMangaState.currentChapter.title} • PAGE ${validPg + 1} OF ${currentMangaState.pages.length}`;
+      }
+
+      const img = document.getElementById("mangaPageImg");
+      if (img) {
+        const pageData = currentMangaState.pages[validPg];
+        img.dataset.origSrc = pageData.imageUrl;
+        img.dataset.proxyRetried = "false";
+        img.style.opacity = "0.4";
+        img.src = pageData.imageUrl;
+      }
+
+      // Update button labels
+      const btnNext = document.getElementById("btnNextPage");
+      if (btnNext) {
+        btnNext.innerText = (validPg === currentMangaState.pages.length - 1) ? "NEXT CH ▶" : "NEXT ▶";
+      }
+      const btnPrev = document.getElementById("btnPrevPage");
+      if (btnPrev) {
+        btnPrev.disabled = (validPg === 0 && currentMangaState.currentChapterIndex === 0);
+      }
+
+      // Preload next 2 pages in memory for instantaneous page turn
+      if (validPg + 1 < currentMangaState.pages.length) {
+        const p1 = new Image();
+        p1.src = currentMangaState.pages[validPg + 1].imageUrl;
+      }
+      if (validPg + 2 < currentMangaState.pages.length) {
+        const p2 = new Image();
+        p2.src = currentMangaState.pages[validPg + 2].imageUrl;
+      }
+
+      saveMangaPosition(currentMangaState.currentChapterIndex, validPg);
+    }
+
+    function onMangaPageLoaded() {
+      const img = document.getElementById("mangaPageImg");
+      if (img) img.style.opacity = "1";
+    }
+
+    function onMangaImgError(img) {
+      if (!img) return;
+      if (img.dataset.proxyRetried !== "true") {
+        img.dataset.proxyRetried = "true";
+        const orig = img.dataset.origSrc || img.src;
+        img.src = `/api/manga/image-proxy?url=${encodeURIComponent(orig)}`;
+      }
+    }
+
+    function renderMangaStrip() {
+      const singleWrapper = document.getElementById("mangaSinglePageWrapper");
+      const stripContainer = document.getElementById("mangaStripContainer");
+      if (singleWrapper) singleWrapper.classList.add("hidden");
+      if (!stripContainer) return;
+      stripContainer.classList.remove("hidden");
+      stripContainer.classList.add("flex");
+
+      stripContainer.innerHTML = currentMangaState.pages.map((p, idx) => `
+        <div class="relative w-full border border-[var(--depth-border)] rounded-lg overflow-hidden bg-black shadow-lg">
+          <div class="flex items-center justify-between px-3 py-1 bg-black/80 text-[10px] font-mono text-[var(--ink-dim)] border-b border-[var(--depth-border)]">
+            <span>PAGE ${idx + 1} / ${currentMangaState.pages.length}</span>
+            <span>${currentMangaState.currentChapter?.title || ''}</span>
+          </div>
+          <img 
+            src="${p.imageUrl}" 
+            data-orig-src="${p.imageUrl}" 
+            referrerpolicy="no-referrer" 
+            alt="Page ${idx + 1}" 
+            loading="lazy" 
+            class="w-full h-auto object-contain mx-auto" 
+            onerror="onMangaImgError(this)" 
+          />
+        </div>
+      `).join("");
+
+      // Bind scroll detection to update page indicator in footer
+      const viewport = document.getElementById("mangaViewportContainer");
+      if (viewport && !viewport.dataset.stripBound) {
+        viewport.dataset.stripBound = "true";
+        viewport.addEventListener("scroll", () => {
+          if (currentMangaState.readingMode !== "strip") return;
+          const cards = stripContainer.querySelectorAll("div.relative");
+          let activeIdx = 0;
+          cards.forEach((c, idx) => {
+            const rect = c.getBoundingClientRect();
+            if (rect.top <= window.innerHeight * 0.4) {
+              activeIdx = idx;
+            }
+          });
+          currentMangaState.currentPageIndex = activeIdx;
+          const pgSelect = document.getElementById("mangaPageSelect");
+          if (pgSelect) pgSelect.value = activeIdx;
+          const pageBadge = document.getElementById("mangaFooterPageBadge");
+          if (pageBadge) pageBadge.innerText = `PAGE ${activeIdx + 1} / ${currentMangaState.pages.length}`;
+        });
+      }
+    }
+
+    function nextMangaPage() {
+      if (currentMangaState.readingMode === "strip") {
+        const viewport = document.getElementById("mangaViewportContainer");
+        if (viewport) viewport.scrollBy({ top: window.innerHeight * 0.8, behavior: "smooth" });
+        return;
+      }
+
+      if (currentMangaState.currentPageIndex < currentMangaState.pages.length - 1) {
+        renderMangaPage(currentMangaState.currentPageIndex + 1);
+      } else {
+        // Last page: auto-advance to next chapter if available
+        nextMangaChapter();
+      }
+    }
+
+    function prevMangaPage() {
+      if (currentMangaState.readingMode === "strip") {
+        const viewport = document.getElementById("mangaViewportContainer");
+        if (viewport) viewport.scrollBy({ top: -window.innerHeight * 0.8, behavior: "smooth" });
+        return;
+      }
+
+      if (currentMangaState.currentPageIndex > 0) {
+        renderMangaPage(currentMangaState.currentPageIndex - 1);
+      } else if (currentMangaState.currentChapterIndex > 0) {
+        // Go to previous chapter, last page
+        prevMangaChapter(true);
+      }
+    }
+
+    function nextMangaChapter() {
+      if (currentMangaState.currentChapterIndex < currentMangaState.chapters.length - 1) {
+        loadMangaChapter(currentMangaState.currentChapterIndex + 1, 0);
+      }
+    }
+
+    function prevMangaChapter(loadLastPage = false) {
+      if (currentMangaState.currentChapterIndex > 0) {
+        loadMangaChapter(currentMangaState.currentChapterIndex - 1, loadLastPage ? -1 : 0);
+      }
+    }
+
+    function onMangaChapterSelect(val) {
+      if (val === "" || val === null || isNaN(val)) return;
+      loadMangaChapter(parseInt(val, 10), 0);
+    }
+
+    function onMangaPageSelect(val) {
+      if (val === "" || val === null || isNaN(val)) return;
+      const idx = parseInt(val, 10);
+      if (currentMangaState.readingMode === "single") {
+        renderMangaPage(idx);
+      } else {
+        const stripContainer = document.getElementById("mangaStripContainer");
+        const cards = stripContainer ? stripContainer.querySelectorAll("div.relative") : [];
+        if (cards[idx]) {
+          cards[idx].scrollIntoView({ behavior: "smooth" });
+        }
+      }
+    }
+
+    function toggleMangaReadingMode() {
+      currentMangaState.readingMode = (currentMangaState.readingMode === "single") ? "strip" : "single";
+      const btnText = document.getElementById("btnMangaModeText");
+      if (btnText) {
+        btnText.innerText = (currentMangaState.readingMode === "single") ? "📄 SINGLE" : "📜 STRIP";
+      }
+
+      if (currentMangaState.readingMode === "single") {
+        const singleWrapper = document.getElementById("mangaSinglePageWrapper");
+        const stripContainer = document.getElementById("mangaStripContainer");
+        if (singleWrapper) singleWrapper.classList.remove("hidden");
+        if (stripContainer) stripContainer.classList.add("hidden");
+        renderMangaPage(currentMangaState.currentPageIndex);
+      } else {
+        renderMangaStrip();
+      }
+    }
+
+    function toggleMangaFitMode() {
+      currentMangaState.fitMode = (currentMangaState.fitMode === "height") ? "width" : "height";
+      const btnText = document.getElementById("btnMangaFitText");
+      if (btnText) {
+        btnText.innerText = (currentMangaState.fitMode === "height") ? "↕ FIT H" : "↔ FIT W";
+      }
+
+      const img = document.getElementById("mangaPageImg");
+      if (img) {
+        if (currentMangaState.fitMode === "width") {
+          img.className = "object-contain w-full max-w-4xl h-auto transition-all duration-150 select-none cursor-pointer";
+        } else {
+          img.className = "object-contain max-h-[82vh] max-w-full transition-all duration-150 select-none cursor-pointer";
+        }
+      }
+    }
+
+    function toggleMangaFullscreen() {
+      const modal = document.getElementById("mangaReaderModal");
+      if (!modal) return;
+      if (!document.fullscreenElement) {
+        modal.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    function closeMangaReader() {
+      const modal = document.getElementById("mangaReaderModal");
+      if (!modal) return;
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+      document.body.style.overflow = "";
+
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    function retryMangaLoad() {
+      if (currentMangaState.item) {
+        openMangaReader(currentMangaState.item);
+      }
+    }
+
+    function saveMangaPosition(chIdx, pgIdx) {
+      if (!currentMangaState.seriesId) return;
+      try {
+        localStorage.setItem(`stuvio_manga_pos_${currentMangaState.seriesId}`, JSON.stringify({
+          chIdx,
+          pgIdx,
+          title: currentMangaState.seriesTitle,
+          timestamp: Date.now()
+        }));
+      } catch(e){}
+    }
+
+    // Keyboard navigation & global shortcuts
     window.addEventListener("keydown", (e) => {
+      // Check if Manga Reader is open
+      const modal = document.getElementById("mangaReaderModal");
+      if (modal && !modal.classList.contains("hidden")) {
+        if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeMangaReader();
+          return;
+        }
+        if (e.key === "ArrowRight" || e.key === "d" || e.key === "D" || e.key === " ") {
+          e.preventDefault();
+          nextMangaPage();
+          return;
+        }
+        if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+          e.preventDefault();
+          prevMangaPage();
+          return;
+        }
+        if (e.key === "]" || e.key === "PageDown") {
+          e.preventDefault();
+          nextMangaChapter();
+          return;
+        }
+        if (e.key === "[" || e.key === "PageUp") {
+          e.preventDefault();
+          prevMangaChapter();
+          return;
+        }
+        if (e.key === "f" || e.key === "F") {
+          e.preventDefault();
+          toggleMangaFullscreen();
+          return;
+        }
+      }
+
+      // Global ESC key listener for other modal closing
       if (e.key === "Escape") {
         closeLidarSettingsModal();
         closeEpisodeMatrixModal();
