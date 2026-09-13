@@ -629,7 +629,7 @@
         </section>
 
         <!-- ============================================================
-             1. DISCOVER VIEW (POINT CLOUD ELEVATION GRID)
+             1. DISCOVER VIEW (TRENDING RIGHT NOW // SPATIAL RADAR)
              ============================================================ -->
         <section id="viewDiscover" class="flex flex-col gap-4 my-4">
           
@@ -637,22 +637,29 @@
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-dashed border-[var(--depth-border-dashed)]">
             <div>
               <div class="flex items-center gap-2">
-                <h2 class="text-2xl font-bold tracking-wider text-[var(--ink-primary)] font-hud uppercase">POINT CLOUD CATALOG</h2>
-                <span class="text-[11px] text-[var(--depth-mid)] font-mono">/VOXELS-ALL</span>
+                <span class="w-2 h-2 rounded-full bg-[var(--depth-coral)] animate-ping"></span>
+                <h2 class="text-2xl font-bold tracking-wider text-[var(--ink-primary)] font-hud uppercase">
+                  TRENDING RIGHT NOW <span class="text-[var(--depth-coral)]">//</span> LIVE
+                </h2>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-[var(--depth-coral)]/20 border border-[var(--depth-coral)] text-[var(--depth-coral)] font-bold">
+                  ● LIVE FEED
+                </span>
               </div>
-              <p class="text-[11px] text-[var(--ink-dim)] font-mono">Click card to instantly resolve and stream highest-seeded native MP4</p>
+              <p class="text-[11px] text-[var(--ink-dim)] font-mono">
+                Real-time up-to-date resources for media trending currently worldwide. Click to play instant MP4!
+              </p>
             </div>
 
             <!-- Department Buttons -->
             <div class="flex items-center gap-1.5 self-start sm:self-auto font-hud">
               <button onclick="loadCatalog('movies')" id="btnFeedMovies" class="receipt-btn receipt-tab-active px-3.5 py-1.5 rounded text-xs tracking-wider">
-                DEPT 01: MOVIES
+                🔥 MOVIES
               </button>
               <button onclick="loadCatalog('series')" id="btnFeedSeries" class="receipt-btn px-3.5 py-1.5 rounded text-xs tracking-wider text-[var(--ink-dim)]">
-                DEPT 02: SERIES
+                ⚡ SERIES
               </button>
               <button onclick="loadCatalog('anime')" id="btnFeedAnime" class="receipt-btn px-3.5 py-1.5 rounded text-xs tracking-wider text-[var(--ink-dim)]">
-                DEPT 03: ANIME
+                🌸 ANIME
               </button>
             </div>
           </div>
@@ -1337,32 +1344,44 @@
           card.onclick = () => { playPaperFeed(); autoPlayBestTorrent(item); };
 
           const posterUrl = item.poster || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80";
+          const rank = item.rank || (idx + 1);
+          const isTop3 = rank <= 3;
+          const isTop10 = rank <= 10;
+          const rankColor = isTop3 ? "text-[var(--depth-coral)] border-[var(--depth-coral)] bg-[var(--depth-coral)]/15" 
+                          : isTop10 ? "text-[var(--depth-near)] border-[var(--depth-near)] bg-[var(--depth-near)]/15"
+                          : "text-[var(--depth-mid)] border-[var(--depth-mid)] bg-[var(--depth-mid)]/15";
+
           // Synthetic pseudo-depth reading for LiDAR aesthetic
-          const depthZ = (0.4 + ((idx * 7) % 25) / 10).toFixed(1);
+          const depthZ = (0.2 + (rank * 0.15)).toFixed(1);
 
           card.innerHTML = `
             <div class="card-reticle card-reticle-tl"></div>
             <div class="card-reticle card-reticle-br"></div>
 
             <div>
-              <div class="flex items-center justify-between text-[9px] text-[var(--ink-faint)] font-mono pb-1 border-b border-dashed border-[var(--depth-border-dashed)]">
-                <span class="text-[var(--depth-mid)] font-bold">VOXEL #${String(idx + 1).padStart(2, '0')}</span>
-                <span>Z: ${depthZ}m</span>
+              <div class="flex items-center justify-between text-[9px] font-mono pb-1 border-b border-dashed border-[var(--depth-border-dashed)]">
+                <span class="px-1.5 py-0.2 rounded border font-bold text-[9px] ${rankColor}">
+                  ${isTop3 ? '🔥' : '⚡'} #${rank} TRENDING
+                </span>
+                <span class="text-[var(--ink-dim)]">Z: ${depthZ}m</span>
               </div>
 
               <!-- Poster Ticket Frame with Holographic Scanline -->
               <div class="relative aspect-[2/3] w-full bg-black rounded overflow-hidden my-1.5 border border-[var(--depth-border)] shadow-md group-hover:border-[var(--depth-mid)] transition-colors">
                 <img src="${posterUrl}" alt="${item.title}" class="w-full h-full object-cover filter contrast-105 group-hover:scale-105 transition-transform duration-300" loading="lazy" />
                 <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60"></div>
-                ${item.rating ? `<span class="absolute top-1.5 right-1.5 bg-black/80 backdrop-blur-sm text-[var(--depth-near)] font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-[var(--depth-near)]/40">★ ${item.rating}</span>` : ""}
-                <span class="absolute bottom-1 left-1.5 font-mono text-[9px] text-[var(--ink-dim)]">${item.year || "N/A"}</span>
+                ${item.rating ? `<span class="absolute top-1.5 right-1.5 bg-black/85 backdrop-blur-sm text-[var(--depth-near)] font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-[var(--depth-near)]/40">★ ${item.rating}</span>` : ""}
+                <span class="absolute bottom-1 left-1.5 font-mono text-[9px] text-[var(--ink-dim)] bg-black/70 px-1 rounded">${item.year || "2026"}</span>
               </div>
 
               <div class="pt-0.5">
                 <h4 class="text-xs font-bold truncate text-[var(--ink-primary)] font-hud group-hover:text-[var(--depth-mid)] transition-colors" title="${item.title}">${item.title}</h4>
                 <div class="flex items-center justify-between text-[10px] text-[var(--ink-faint)] font-mono mt-0.5">
-                  <span>[${item.type.toUpperCase()}]</span>
-                  <span class="text-[var(--depth-mid)]">Z-PLANE 0</span>
+                  <span class="text-[var(--depth-mid)] font-bold">[${(item.type || 'MEDIA').toUpperCase()}]</span>
+                  <span class="text-[var(--depth-coral)] flex items-center gap-1 font-bold">
+                    <span class="w-1.5 h-1.5 rounded-full bg-[var(--depth-coral)] animate-pulse"></span>
+                    NOW
+                  </span>
                 </div>
               </div>
             </div>

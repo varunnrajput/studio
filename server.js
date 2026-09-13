@@ -66,6 +66,201 @@ async function fetchJson(url, timeoutMs = 5000, maxRedirects = 3) {
   });
 }
 
+// =========================================================================
+// TRENDING RIGHT NOW ENGINES & IN-MEMORY CACHE (15 MINUTE TTL)
+// Up-to-date resources for Movies, Series, and Anime currently trending
+// =========================================================================
+const trendingCache = {
+  movies: { timestamp: 0, data: [] },
+  series: { timestamp: 0, data: [] },
+  anime: { timestamp: 0, data: [] }
+};
+const TRENDING_CACHE_TTL = 15 * 60 * 1000;
+const TMDB_API_KEYS = [
+  "8476a7ab80ad76f0936744df0430e67c",
+  "4f298a53e5522830ce95f3859f10ac84"
+];
+
+async function getTrendingMovies() {
+  const now = Date.now();
+  if (trendingCache.movies.data.length && (now - trendingCache.movies.timestamp < TRENDING_CACHE_TTL)) {
+    return trendingCache.movies.data;
+  }
+
+  // 1. Fetch live daily trending from TMDB
+  for (const key of TMDB_API_KEYS) {
+    try {
+      const res = await fetchJson(`https://api.themoviedb.org/3/trending/movie/day?api_key=${key}`, 4500);
+      if (res && res.results && res.results.length) {
+        const items = res.results.slice(0, 24).map((m, idx) => ({
+          id: `tmdb-${m.id}`,
+          tmdb_id: m.id,
+          title: m.title || m.original_title,
+          poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
+          year: (m.release_date || "").slice(0, 4) || "2026",
+          rating: m.vote_average ? Number(m.vote_average.toFixed(1)) : null,
+          type: "Movie",
+          rank: idx + 1,
+          trending: true
+        }));
+        trendingCache.movies = { timestamp: now, data: items };
+        return items;
+      }
+    } catch (e) {}
+  }
+
+  // Fallback: Cinemeta top filtered to recent
+  try {
+    const cmData = await fetchJson("https://v3-cinemeta.strem.io/catalog/movie/top.json", 4500);
+    if (cmData && cmData.metas && cmData.metas.length) {
+      const items = cmData.metas.slice(0, 24).map((m, idx) => ({
+        id: m.id,
+        title: m.name,
+        poster: m.poster,
+        year: m.releaseInfo || m.year || "",
+        rating: m.imdbRating || null,
+        type: "Movie",
+        rank: idx + 1,
+        trending: true
+      }));
+      trendingCache.movies = { timestamp: now, data: items };
+      return items;
+    }
+  } catch (e) {}
+
+  return trendingCache.movies.data || [];
+}
+
+async function getTrendingSeries() {
+  const now = Date.now();
+  if (trendingCache.series.data.length && (now - trendingCache.series.timestamp < TRENDING_CACHE_TTL)) {
+    return trendingCache.series.data;
+  }
+
+  // 1. Fetch live daily trending from TMDB
+  for (const key of TMDB_API_KEYS) {
+    try {
+      const res = await fetchJson(`https://api.themoviedb.org/3/trending/tv/day?api_key=${key}`, 4500);
+      if (res && res.results && res.results.length) {
+        const items = res.results.slice(0, 24).map((s, idx) => ({
+          id: `tmdb-tv-${s.id}`,
+          tmdb_id: s.id,
+          title: s.name || s.original_name,
+          poster: s.poster_path ? `https://image.tmdb.org/t/p/w500${s.poster_path}` : null,
+          year: (s.first_air_date || "").slice(0, 4) || "2026",
+          rating: s.vote_average ? Number(s.vote_average.toFixed(1)) : null,
+          type: "Series",
+          rank: idx + 1,
+          trending: true
+        }));
+        trendingCache.series = { timestamp: now, data: items };
+        return items;
+      }
+    } catch (e) {}
+  }
+
+  // Fallback: Cinemeta series top
+  try {
+    const cmData = await fetchJson("https://v3-cinemeta.strem.io/catalog/series/top.json", 4500);
+    if (cmData && cmData.metas && cmData.metas.length) {
+      const items = cmData.metas.slice(0, 24).map((m, idx) => ({
+        id: m.id,
+        title: m.name,
+        poster: m.poster,
+        year: m.releaseInfo || m.year || "",
+        rating: m.imdbRating || null,
+        type: "Series",
+        rank: idx + 1,
+        trending: true
+      }));
+      trendingCache.series = { timestamp: now, data: items };
+      return items;
+    }
+  } catch (e) {}
+
+  return trendingCache.series.data || [];
+}
+
+async function getTrendingAnime() {
+  const now = Date.now();
+  if (trendingCache.anime.data.length && (now - trendingCache.anime.timestamp < TRENDING_CACHE_TTL)) {
+    return trendingCache.anime.data;
+  }
+
+  // 1. Fetch live trending anime from AniList GraphQL
+  try {
+    const query = `
+      query {
+        Page(page: 1, perPage: 24) {
+          media(sort: TRENDING_DESC, type: ANIME, isAdult: false) {
+            id
+            title { english romaji }
+            coverImage { extraLarge large }
+            seasonYear
+            startDate { year }
+            averageScore
+            format
+          }
+        }
+      }
+    `;
+
+    let anilistData = null;
+    if (typeof fetch === "function") {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4500);
+      const res = await fetch("https://graphql.anilist.co", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ query }),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        anilistData = await res.json();
+      }
+    }
+
+    const list = anilistData?.data?.Page?.media || [];
+    if (list.length) {
+      const items = list.map((a, idx) => ({
+        id: `anilist-${a.id}`,
+        title: a.title.english || a.title.romaji,
+        romaji: a.title.romaji,
+        poster: a.coverImage.extraLarge || a.coverImage.large,
+        year: a.startDate?.year || a.seasonYear || "2026",
+        rating: a.averageScore ? Number((a.averageScore / 10).toFixed(1)) : null,
+        type: "Anime",
+        rank: idx + 1,
+        trending: true
+      }));
+      trendingCache.anime = { timestamp: now, data: items };
+      return items;
+    }
+  } catch (e) {}
+
+  // Fallback: Cinemeta Anime
+  try {
+    const animeData = await fetchJson("https://v3-cinemeta.strem.io/catalog/series/top/genre=Anime.json", 4500);
+    if (animeData && animeData.metas) {
+      const items = animeData.metas.slice(0, 24).map((m, idx) => ({
+        id: m.id,
+        title: m.name,
+        poster: m.poster,
+        year: m.releaseInfo || m.year || "",
+        rating: m.imdbRating || null,
+        type: "Anime",
+        rank: idx + 1,
+        trending: true
+      }));
+      trendingCache.anime = { timestamp: now, data: items };
+      return items;
+    }
+  } catch (e) {}
+
+  return trendingCache.anime.data || [];
+}
+
 // Helper: Strict classification of browser-playable MP4 containers (H.264 / AAC, 8-bit)
 function isBrowserMp4(name, isYts = false) {
   if (isYts) return true;
@@ -496,43 +691,24 @@ async function handler(req, res) {
     return;
   }
 
-  // 1. Recommendation Feed Catalog (/catalog?type=movies|series|anime)
+  // 1. Trending Right Now Feed Catalog (/catalog?type=movies|series|anime)
   if (pathname === "/catalog" || pathname.startsWith("/catalog")) {
     const type = urlParams.searchParams.get("type") || reqUrlObj.searchParams.get("type") || "movies";
 
     try {
       let items = [];
-
       if (type === "anime") {
-        const animeData = await fetchJson("https://v3-cinemeta.strem.io/catalog/series/top/genre=Anime.json", 5000);
-        if (animeData && animeData.metas) {
-          items = animeData.metas.slice(0, 24).map(m => ({
-            id: m.id,
-            title: m.name,
-            poster: m.poster,
-            year: m.releaseInfo || m.year || "",
-            rating: m.imdbRating || null,
-            type: "Anime"
-          }));
-        }
+        items = await getTrendingAnime();
+      } else if (type === "series") {
+        items = await getTrendingSeries();
       } else {
-        const cinemetaType = type === "series" ? "series" : "movie";
-        const metaData = await fetchJson(`https://v3-cinemeta.strem.io/catalog/${cinemetaType}/top.json`, 5000);
-        if (metaData && metaData.metas) {
-          items = metaData.metas.slice(0, 24).map(m => ({
-            id: m.id,
-            title: m.name,
-            poster: m.poster,
-            year: m.releaseInfo || m.year || "",
-            rating: m.imdbRating || null,
-            type: type === "series" ? "Series" : "Movie"
-          }));
-        }
+        items = await getTrendingMovies();
       }
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(items));
     } catch (err) {
+      console.error("Trending catalog handler error:", err);
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify([]));
     }
