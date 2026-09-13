@@ -419,6 +419,39 @@
     .hero-indicator-dot:hover:not(.active) {
       background: rgba(255, 255, 255, 0.7);
     }
+
+    /* ============================================================
+       3D LIDAR GLOBE & POINT-CLOUD SWARM RADAR
+       ============================================================ */
+    #lidarGlobeCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+    .flight-log-card {
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .flight-log-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--depth-mid);
+      box-shadow: 0 6px 20px rgba(0, 245, 212, 0.15);
+    }
+    .episode-matrix-card {
+      transition: all 0.2s ease;
+    }
+    .episode-matrix-card:hover {
+      border-color: var(--depth-mid);
+      background: var(--depth-card-hover);
+      transform: translateY(-2px);
+    }
+    .season-pill-active {
+      background: var(--depth-mid) !important;
+      color: #050811 !important;
+      border-color: var(--depth-mid) !important;
+      font-weight: 700 !important;
+      box-shadow: 0 0 12px rgba(0, 245, 212, 0.4) !important;
+    }
   </style>
 </head>
 <body>
@@ -579,6 +612,65 @@
           </nav>
 
           <div class="depth-rule-double"></div>
+
+          <!-- 3D LiDAR Swarm Radar & Global DHT Point-Cloud Globe -->
+          <div id="lidarRadarSection" class="my-4 receipt-card p-3 sm:p-4 rounded-xl border border-[var(--depth-border)] shadow-xl relative overflow-hidden">
+            <div class="card-reticle card-reticle-tl"></div>
+            <div class="card-reticle card-reticle-br"></div>
+            <div class="scanline-overlay"></div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-dashed border-[var(--depth-border-dashed)]">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-[var(--depth-mid)] animate-ping"></span>
+                <span class="text-xs font-bold uppercase tracking-wider text-[var(--depth-mid)] font-hud">
+                  3D LIDAR SWARM RADAR // GLOBAL DHT POINT CLOUD
+                </span>
+                <span class="text-[9px] font-mono px-2 py-0.5 rounded bg-[var(--depth-mid)]/15 border border-[var(--depth-mid)]/40 text-[var(--depth-mid)] font-bold">
+                  60 FPS HARDWARE ACCELERATED
+                </span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button onclick="resetLidarGlobeOrbit()" class="text-[10px] font-mono px-2.5 py-1 rounded border border-[var(--depth-border)] text-[var(--ink-dim)] hover:text-white hover:border-[var(--depth-mid)] transition" title="Reset 3D rotation orbit">
+                  [ ↻ RESET ORBIT ]
+                </button>
+                <button onclick="toggleLidarRadarExpand()" id="btnToggleRadar" class="text-[10px] font-mono px-2.5 py-1 rounded border border-[var(--depth-border)] text-[var(--ink-dim)] hover:text-white hover:border-[var(--depth-mid)] transition">
+                  [ ▲ MINIMIZE ]
+                </button>
+              </div>
+            </div>
+
+            <!-- Canvas & Diagnostics Viewport -->
+            <div id="lidarCanvasWrapper" class="relative w-full h-52 sm:h-64 mt-2 rounded-lg bg-black/70 overflow-hidden border border-[var(--depth-border)] flex items-center justify-center cursor-grab active:cursor-grabbing select-none">
+              <canvas id="lidarGlobeCanvas" class="w-full h-full block"></canvas>
+              
+              <!-- Floating HUD Telemetry Readouts -->
+              <div class="absolute top-2 left-2 pointer-events-none text-[10px] font-mono flex flex-col gap-1 text-[var(--ink-dim)] bg-black/60 backdrop-blur-sm p-2 rounded border border-[var(--depth-border)]">
+                <div class="flex items-center gap-1.5">
+                  <span class="w-1.5 h-1.5 rounded-full bg-[var(--depth-mid)]"></span>
+                  <span class="text-[var(--ink-primary)] font-bold">RADAR MODE:</span>
+                  <span class="text-[var(--depth-mid)]">3D POINT CLOUD</span>
+                </div>
+                <div>DHT PEERS: <span id="lidarPeerCount" class="text-[var(--depth-near)] font-bold">1,842</span> NODES</div>
+                <div>SONAR BEAM: <span class="text-[var(--depth-mid)]">120Hz SWEEP</span></div>
+              </div>
+
+              <div class="absolute top-2 right-2 pointer-events-none text-[10px] font-mono flex flex-col items-end gap-1 text-[var(--ink-dim)] bg-black/60 backdrop-blur-sm p-2 rounded border border-[var(--depth-border)]">
+                <div>EDGE ROUTE: <span class="text-[var(--ink-success)] font-bold">FRA-01 (28ms)</span></div>
+                <div>FOCAL DEPTH: <span id="lidarFocalDepth" class="text-[var(--depth-coral)] font-bold">Z: 1.84m</span></div>
+                <div class="text-[9px] text-[var(--ink-faint)]">DRAG TO ROTATE 3D</div>
+              </div>
+
+              <!-- Bottom Data Center Hub Nodes Pill Bar -->
+              <div class="absolute bottom-2 inset-x-2 pointer-events-none flex flex-wrap items-center justify-center gap-1.5 text-[9px] font-mono">
+                <span class="px-2 py-0.5 rounded bg-black/80 border border-[var(--depth-mid)]/30 text-[var(--depth-mid)]">FRA 50°N</span>
+                <span class="px-2 py-0.5 rounded bg-black/80 border border-[var(--depth-near)]/30 text-[var(--depth-near)]">NYC 40°N</span>
+                <span class="px-2 py-0.5 rounded bg-black/80 border border-[var(--depth-coral)]/30 text-[var(--depth-coral)]">AMS 52°N</span>
+                <span class="px-2 py-0.5 rounded bg-black/80 border border-[var(--depth-far)]/30 text-[#a5b4fc]">TYO 35°N</span>
+                <span class="px-2 py-0.5 rounded bg-black/80 border border-[var(--depth-mid)]/30 text-[var(--depth-mid)]">SIN 1°N</span>
+                <span class="px-2 py-0.5 rounded bg-black/80 border border-[var(--depth-near)]/30 text-[var(--depth-near)]">LDN 51°N</span>
+              </div>
+            </div>
+          </div>
         </header>
 
         <!-- ============================================================
@@ -609,6 +701,14 @@
                 title="Skip to next torrent candidate immediately"
               >
                 ⏭ NEXT CANDIDATE
+              </button>
+              <button 
+                id="playerEpisodesBtn"
+                onclick="playPaperTick(); if (activeTargetMedia) openEpisodeMatrix(activeTargetMedia);" 
+                class="hidden depth-btn px-2.5 py-1 rounded text-xs tracking-wider text-[var(--depth-mid)] border-[var(--depth-mid)]/40 hover:border-[var(--depth-mid)]"
+                title="Browse and select series seasons & episodes"
+              >
+                ⊞ EPISODES
               </button>
               <button 
                 id="changeReleaseBtn"
@@ -693,6 +793,29 @@
           <!-- Video Player Frame with Reticle Brackets -->
           <div class="w-full aspect-video bg-black rounded-lg overflow-hidden border border-[var(--depth-border)] shadow-2xl relative">
             <div id="artplayer" class="w-full h-full"></div>
+
+            <!-- Binge HUD: Next Episode Auto-Advance Countdown Overlay -->
+            <div id="bingeCountdownOverlay" class="absolute bottom-16 right-4 z-40 hidden bg-[var(--depth-surface)]/95 backdrop-blur-md border border-[var(--depth-border-glow)] rounded-xl p-3.5 shadow-2xl max-w-sm flex-col gap-2 pointer-events-auto">
+              <div class="flex items-center justify-between gap-2 text-xs font-mono">
+                <span class="text-[var(--depth-mid)] font-bold font-hud flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-[var(--depth-mid)] animate-ping"></span>
+                  ⏭ NEXT EPISODE IN <span id="bingeSecondsCount" class="text-white font-bold text-sm">10</span>s
+                </span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-[var(--depth-coral)]/20 text-[var(--depth-coral)] font-bold">AUTONOMOUS</span>
+              </div>
+              <div class="text-xs font-bold text-white font-hud truncate" id="bingeNextEpTitle">S01E02 - Next Episode</div>
+              <div class="w-full bg-black/60 h-1.5 rounded-full overflow-hidden border border-[var(--depth-border)]">
+                <div id="bingeProgressBar" class="bg-[var(--depth-mid)] h-full transition-all duration-1000" style="width: 100%"></div>
+              </div>
+              <div class="flex items-center gap-2 pt-1">
+                <button onclick="dispatchNextEpisodeNow()" class="depth-btn-primary px-3 py-1 rounded text-xs font-hud font-bold uppercase tracking-wider flex-1 active:scale-95">
+                  ▶ STREAM NOW
+                </button>
+                <button onclick="cancelBingeCountdown()" class="depth-btn px-2.5 py-1 rounded text-xs font-mono text-[var(--ink-dim)] hover:text-white">
+                  [ ✕ CANCEL ]
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- Spatial Caption & Audio Telemetry Register -->
@@ -789,6 +912,32 @@
               <button onclick="loadCatalog('anime')" id="btnFeedAnime" class="receipt-btn px-3.5 py-1.5 rounded text-xs tracking-wider text-[var(--ink-dim)]">
                 🌸 ANIME
               </button>
+            </div>
+          </div>
+
+          <!-- Mission Flight Log (Continue Watching & Resume Playback) -->
+          <div id="missionFlightLogSection" class="hidden flex-col gap-3 p-3.5 rounded-xl receipt-card border border-[var(--depth-border)] shadow-lg relative overflow-hidden">
+            <div class="card-reticle card-reticle-tl"></div>
+            <div class="card-reticle card-reticle-br"></div>
+
+            <div class="flex items-center justify-between pb-2 border-b border-dashed border-[var(--depth-border-dashed)] text-xs font-mono">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-[var(--depth-mid)] animate-pulse"></span>
+                <span class="font-bold text-[var(--depth-mid)] font-hud uppercase tracking-wider">
+                  ◈ MISSION FLIGHT LOG // CONTINUE WATCHING
+                </span>
+                <span id="flightLogCountBadge" class="text-[10px] px-2 py-0.5 rounded bg-[var(--depth-mid)]/15 border border-[var(--depth-mid)]/40 text-[var(--depth-mid)] font-bold">
+                  0 ACTIVE
+                </span>
+              </div>
+              <button onclick="clearAllFlightLogs()" class="text-[10px] font-mono text-[var(--ink-dim)] hover:text-[var(--depth-coral)] transition underline">
+                [ CLEAR LOGS ]
+              </button>
+            </div>
+
+            <!-- Flight Log Cards Grid -->
+            <div id="flightLogCardsContainer" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              <!-- Dynamically rendered flight log cards -->
             </div>
           </div>
 
@@ -1014,6 +1163,51 @@
     </div> <!-- /depth-console-frame -->
 
   </main> <!-- /depth-console -->
+
+  <!-- ============================================================
+       INTERACTIVE SEASON & EPISODE MATRIX MODAL (BINGE HUD)
+       ============================================================ -->
+  <div id="episodeMatrixModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden items-center justify-center p-3 sm:p-6 overflow-y-auto">
+    <div class="relative w-full max-w-4xl bg-[var(--depth-surface)] border border-[var(--depth-border-glow)] rounded-xl shadow-2xl p-4 sm:p-6 flex flex-col gap-4 max-h-[90vh] overflow-hidden my-auto">
+      <div class="card-reticle card-reticle-tl"></div>
+      <div class="card-reticle card-reticle-tr"></div>
+      <div class="card-reticle card-reticle-bl"></div>
+      <div class="card-reticle card-reticle-br"></div>
+      <div class="scanline-overlay pointer-events-none"></div>
+
+      <!-- Modal Header Banner -->
+      <div class="relative rounded-lg overflow-hidden border border-[var(--depth-border)] bg-black/60 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div class="flex items-center gap-3 z-10">
+          <img id="matrixPoster" src="" alt="Poster" class="w-12 h-16 sm:w-16 sm:h-24 object-cover rounded border border-[var(--depth-border)] shadow" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80';" />
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded bg-[var(--depth-coral)] text-black font-bold text-[10px] font-hud uppercase">SERIES MATRIX</span>
+              <span id="matrixYear" class="text-[11px] text-[var(--ink-dim)] font-mono"></span>
+              <span id="matrixRating" class="text-[11px] text-[var(--depth-near)] font-mono font-bold"></span>
+            </div>
+            <h2 id="matrixTitle" class="text-xl sm:text-2xl font-bold font-hud text-white mt-1"></h2>
+            <p id="matrixOverview" class="text-xs text-[var(--ink-dim)] font-mono line-clamp-2 max-w-xl mt-1"></p>
+          </div>
+        </div>
+        <button onclick="closeEpisodeMatrix()" class="self-start sm:self-auto text-xs font-hud font-bold px-3 py-1.5 rounded border border-[var(--depth-border)] bg-black/60 text-[var(--ink-dim)] hover:text-[var(--depth-coral)] hover:border-[var(--depth-coral)] active:scale-95 transition z-10">
+          [ ✕ CLOSE MATRIX ]
+        </button>
+      </div>
+
+      <!-- Season Switcher Pills Row -->
+      <div class="flex items-center justify-between gap-2 border-b border-dashed border-[var(--depth-border-dashed)] pb-2 text-xs font-mono">
+        <div class="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none" id="matrixSeasonPills">
+          <!-- Season pills dynamically inserted -->
+        </div>
+        <span id="matrixEpisodeCountBadge" class="text-[10px] font-mono text-[var(--depth-mid)] font-bold whitespace-nowrap"></span>
+      </div>
+
+      <!-- Episodes Cards Grid (Scrollable) -->
+      <div id="matrixEpisodesGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 overflow-y-auto pr-1 flex-1 max-h-[50vh]">
+        <!-- Episode cards dynamically inserted -->
+      </div>
+    </div>
+  </div>
 
   <!-- ============================================================
        BIOMETRIC / SPATIAL SECURITY PIN AUTHORIZATION TERMINAL
@@ -1466,6 +1660,789 @@
       }
     }
 
+    // ============================================================
+    // FEATURE 3: 3D LIDAR SWARM RADAR & GLOBAL POINT-CLOUD GLOBE
+    // Hardware accelerated Canvas spherical projection with drag rotation
+    // ============================================================
+    let lidarGlobeState = {
+      canvas: null,
+      ctx: null,
+      animId: null,
+      yaw: 0,
+      pitch: 0.25,
+      targetYaw: 0,
+      targetPitch: 0.25,
+      isDragging: false,
+      lastMouseX: 0,
+      lastMouseY: 0,
+      sonarAngle: 0,
+      isExpanded: true,
+      nodes: [],
+      datacenters: [
+        { name: "FRA", city: "Frankfurt", lat: 50.1, lon: 8.6, ping: "28ms" },
+        { name: "NYC", city: "New York", lat: 40.7, lon: -74.0, ping: "42ms" },
+        { name: "AMS", city: "Amsterdam", lat: 52.3, lon: 4.9, ping: "31ms" },
+        { name: "TYO", city: "Tokyo", lat: 35.6, lon: 139.6, ping: "115ms" },
+        { name: "LDN", city: "London", lat: 51.5, lon: -0.1, ping: "34ms" },
+        { name: "SIN", city: "Singapore", lat: 1.3, lon: 103.8, ping: "140ms" },
+        { name: "SYD", city: "Sydney", lat: -33.8, lon: 151.2, ping: "185ms" }
+      ]
+    };
+
+    function initLidarGlobe() {
+      const canvas = document.getElementById("lidarGlobeCanvas");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      lidarGlobeState.canvas = canvas;
+      lidarGlobeState.ctx = ctx;
+
+      // Generate 120 distributed point cloud surface nodes
+      lidarGlobeState.nodes = [];
+      const phi = (1 + Math.sqrt(5)) / 2; // Golden ratio
+      const numNodes = 120;
+      for (let i = 0; i < numNodes; i++) {
+        const theta = 2 * Math.PI * i / phi;
+        const phiAngle = Math.acos(1 - 2 * (i + 0.5) / numNodes);
+        lidarGlobeState.nodes.push({
+          x: Math.cos(theta) * Math.sin(phiAngle),
+          y: Math.cos(phiAngle),
+          z: Math.sin(theta) * Math.sin(phiAngle),
+          pulse: Math.random() * Math.PI * 2
+        });
+      }
+
+      // Convert datacenters to 3D Cartesian coordinates
+      lidarGlobeState.datacenters.forEach(dc => {
+        const phiAngle = (90 - dc.lat) * (Math.PI / 180);
+        const thetaAngle = (dc.lon + 180) * (Math.PI / 180);
+        dc.x = -Math.sin(phiAngle) * Math.cos(thetaAngle);
+        dc.y = Math.cos(phiAngle);
+        dc.z = Math.sin(phiAngle) * Math.sin(thetaAngle);
+      });
+
+      function resizeCanvas() {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(rect.width * dpr, 300);
+        canvas.height = Math.max(rect.height * dpr, 180);
+      }
+      resizeCanvas();
+      window.addEventListener("resize", resizeCanvas);
+
+      // Mouse & Touch Drag Listeners
+      const wrapper = document.getElementById("lidarCanvasWrapper") || canvas;
+      wrapper.addEventListener("mousedown", (e) => {
+        lidarGlobeState.isDragging = true;
+        lidarGlobeState.lastMouseX = e.clientX;
+        lidarGlobeState.lastMouseY = e.clientY;
+      });
+      window.addEventListener("mousemove", (e) => {
+        if (!lidarGlobeState.isDragging) return;
+        const dx = e.clientX - lidarGlobeState.lastMouseX;
+        const dy = e.clientY - lidarGlobeState.lastMouseY;
+        lidarGlobeState.lastMouseX = e.clientX;
+        lidarGlobeState.lastMouseY = e.clientY;
+        lidarGlobeState.targetYaw += dx * 0.008;
+        lidarGlobeState.targetPitch += dy * 0.008;
+        lidarGlobeState.targetPitch = Math.max(-1.1, Math.min(1.1, lidarGlobeState.targetPitch));
+      });
+      window.addEventListener("mouseup", () => {
+        lidarGlobeState.isDragging = false;
+      });
+
+      wrapper.addEventListener("touchstart", (e) => {
+        if (e.touches.length) {
+          lidarGlobeState.isDragging = true;
+          lidarGlobeState.lastMouseX = e.touches[0].clientX;
+          lidarGlobeState.lastMouseY = e.touches[0].clientY;
+        }
+      }, { passive: true });
+      window.addEventListener("touchmove", (e) => {
+        if (!lidarGlobeState.isDragging || !e.touches.length) return;
+        const dx = e.touches[0].clientX - lidarGlobeState.lastMouseX;
+        const dy = e.touches[0].clientY - lidarGlobeState.lastMouseY;
+        lidarGlobeState.lastMouseX = e.touches[0].clientX;
+        lidarGlobeState.lastMouseY = e.touches[0].clientY;
+        lidarGlobeState.targetYaw += dx * 0.008;
+        lidarGlobeState.targetPitch += dy * 0.008;
+        lidarGlobeState.targetPitch = Math.max(-1.1, Math.min(1.1, lidarGlobeState.targetPitch));
+      }, { passive: true });
+      window.addEventListener("touchend", () => {
+        lidarGlobeState.isDragging = false;
+      });
+
+      renderLidarGlobeLoop();
+    }
+
+    function resetLidarGlobeOrbit() {
+      playPaperTick();
+      lidarGlobeState.targetYaw = 0;
+      lidarGlobeState.targetPitch = 0.25;
+    }
+
+    function toggleLidarRadarExpand() {
+      playPaperTick();
+      const wrap = document.getElementById("lidarCanvasWrapper");
+      const btn = document.getElementById("btnToggleRadar");
+      if (!wrap || !btn) return;
+      lidarGlobeState.isExpanded = !lidarGlobeState.isExpanded;
+      if (lidarGlobeState.isExpanded) {
+        wrap.classList.remove("hidden");
+        btn.innerText = "[ ▲ MINIMIZE ]";
+      } else {
+        wrap.classList.add("hidden");
+        btn.innerText = "[ ▼ EXPAND RADAR ]";
+      }
+    }
+
+    function renderLidarGlobeLoop() {
+      const { canvas, ctx } = lidarGlobeState;
+      if (!canvas || !ctx) return;
+
+      if (!lidarGlobeState.isDragging) {
+        lidarGlobeState.targetYaw += 0.004;
+      }
+      lidarGlobeState.yaw += (lidarGlobeState.targetYaw - lidarGlobeState.yaw) * 0.08;
+      lidarGlobeState.pitch += (lidarGlobeState.targetPitch - lidarGlobeState.pitch) * 0.08;
+      lidarGlobeState.sonarAngle += 0.025;
+
+      const w = canvas.width;
+      const h = canvas.height;
+      const cx = w / 2;
+      const cy = h / 2;
+      const radius = Math.min(w, h) * 0.38;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // 3D Point Projector
+      function project3D(x, y, z) {
+        const cosP = Math.cos(lidarGlobeState.pitch);
+        const sinP = Math.sin(lidarGlobeState.pitch);
+        const y1 = y * cosP - z * sinP;
+        const z1 = y * sinP + z * cosP;
+
+        const cosY = Math.cos(lidarGlobeState.yaw);
+        const sinY = Math.sin(lidarGlobeState.yaw);
+        const x2 = x * cosY + z1 * sinY;
+        const z2 = -x * sinY + z1 * cosY;
+
+        return {
+          px: cx + x2 * radius,
+          py: cy - y1 * radius,
+          depth: z2,
+          x: x2,
+          y: y1,
+          z: z2
+        };
+      }
+
+      // 1. Draw subtle background sphere disc
+      const bgGrad = ctx.createRadialGradient(cx, cy, radius * 0.1, cx, cy, radius);
+      bgGrad.addColorStop(0, "rgba(0, 245, 212, 0.08)");
+      bgGrad.addColorStop(0.7, "rgba(8, 13, 26, 0.6)");
+      bgGrad.addColorStop(1, "rgba(5, 8, 17, 0.95)");
+      ctx.fillStyle = bgGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Outer bounding wire ring
+      ctx.strokeStyle = "rgba(0, 245, 212, 0.35)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 2. Draw Latitude Rings
+      const latitudes = [-60, -30, 0, 30, 60];
+      latitudes.forEach(lat => {
+        const phiAngle = (90 - lat) * (Math.PI / 180);
+        const rLat = Math.sin(phiAngle);
+        const yLat = Math.cos(phiAngle);
+        const ringSteps = 48;
+        ctx.beginPath();
+        for (let i = 0; i <= ringSteps; i++) {
+          const t = (i / ringSteps) * Math.PI * 2;
+          const pt = project3D(Math.cos(t) * rLat, yLat, Math.sin(t) * rLat);
+          if (i === 0) ctx.moveTo(pt.px, pt.py);
+          else ctx.lineTo(pt.px, pt.py);
+        }
+        ctx.strokeStyle = lat === 0 ? "rgba(0, 245, 212, 0.28)" : "rgba(99, 102, 241, 0.12)";
+        ctx.lineWidth = lat === 0 ? 1.4 : 0.8;
+        ctx.stroke();
+      });
+
+      // 3. Draw Longitude Meridians
+      for (let lon = 0; lon < 360; lon += 45) {
+        const theta = lon * (Math.PI / 180);
+        const meridianSteps = 32;
+        ctx.beginPath();
+        for (let i = 0; i <= meridianSteps; i++) {
+          const p = (i / meridianSteps) * Math.PI;
+          const pt = project3D(Math.sin(p) * Math.cos(theta), Math.cos(p), Math.sin(p) * Math.sin(theta));
+          if (i === 0) ctx.moveTo(pt.px, pt.py);
+          else ctx.lineTo(pt.px, pt.py);
+        }
+        ctx.strokeStyle = "rgba(99, 102, 241, 0.1)";
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      }
+
+      // 4. Sonar Radar Sweep Wedge & Beam
+      const sweepAngle = lidarGlobeState.sonarAngle;
+      const sweepX = Math.cos(sweepAngle);
+      const sweepZ = Math.sin(sweepAngle);
+      const sweepProj = project3D(sweepX, 0, sweepZ);
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(sweepProj.px, sweepProj.py);
+      ctx.strokeStyle = "rgba(0, 245, 212, 0.8)";
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+
+      // 5. Draw Point Cloud Swarm Nodes
+      const projectedNodes = lidarGlobeState.nodes.map(n => {
+        n.pulse += 0.04;
+        return {
+          ...project3D(n.x, n.y, n.z),
+          pulse: Math.sin(n.pulse)
+        };
+      });
+
+      projectedNodes.sort((a, b) => b.depth - a.depth);
+
+      projectedNodes.forEach(pt => {
+        const norm = (-pt.depth + 1) / 2; // 0 (far) to 1 (near)
+        let color = "rgba(99, 102, 241, 0.35)";
+        let nodeSize = 1.2;
+
+        if (norm > 0.7) {
+          color = `rgba(0, 245, 212, ${0.6 + pt.pulse * 0.2})`;
+          nodeSize = 2.4 + pt.pulse * 0.6;
+        } else if (norm > 0.45) {
+          color = `rgba(255, 159, 28, ${0.45 + pt.pulse * 0.15})`;
+          nodeSize = 1.8;
+        }
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(pt.px, pt.py, Math.max(0.8, nodeSize), 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // 6. Draw Datacenter Hubs with glowing beacons
+      const projectedHubs = lidarGlobeState.datacenters.map(dc => {
+        return {
+          ...dc,
+          ...project3D(dc.x, dc.y, dc.z)
+        };
+      });
+
+      const frontHubs = projectedHubs.filter(h => h.depth < 0.2);
+      ctx.strokeStyle = "rgba(0, 245, 212, 0.35)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 4]);
+      for (let i = 0; i < frontHubs.length - 1; i++) {
+        const h1 = frontHubs[i];
+        const h2 = frontHubs[i + 1];
+        ctx.beginPath();
+        ctx.moveTo(h1.px, h1.py);
+        ctx.lineTo(h2.px, h2.py);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      projectedHubs.forEach(hub => {
+        const isVisible = hub.depth < 0.35;
+        if (!isVisible) return;
+
+        const pulseScale = 1 + Math.sin(Date.now() * 0.005) * 0.3;
+        ctx.strokeStyle = "rgba(255, 51, 102, 0.6)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(hub.px, hub.py, 5 * pulseScale, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = "#ff3366";
+        ctx.beginPath();
+        ctx.arc(hub.px, hub.py, 2.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = "bold 9px 'JetBrains Mono', monospace";
+        ctx.fillStyle = "white";
+        ctx.fillText(hub.name, hub.px + 7, hub.py - 4);
+      });
+
+      lidarGlobeState.animId = requestAnimationFrame(renderLidarGlobeLoop);
+    }
+
+    // ============================================================
+    // FEATURE 2: MISSION FLIGHT LOG (CONTINUE WATCHING & RESUME)
+    // Local persistence with progress meters and 1-click resume
+    // ============================================================
+    const FLIGHT_LOG_KEY = "stuvio_flight_log";
+
+    function loadFlightLogs() {
+      try {
+        const raw = localStorage.getItem(FLIGHT_LOG_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveFlightLog(entry) {
+      if (!entry || !entry.title) return;
+      const logs = loadFlightLogs();
+      const entryId = entry.id || `${entry.imdb || entry.title}_${entry.season || 0}_${entry.episode || 0}`;
+
+      const existingIdx = logs.findIndex(l => l.id === entryId || (l.title === entry.title && l.season === entry.season && l.episode === entry.episode));
+
+      const updated = {
+        id: entryId,
+        title: entry.title,
+        season: entry.season || null,
+        episode: entry.episode || null,
+        epTitle: entry.epTitle || null,
+        poster: entry.poster || null,
+        backdrop: entry.backdrop || null,
+        imdb: entry.imdb || null,
+        currentTime: Math.floor(entry.currentTime || 0),
+        duration: Math.floor(entry.duration || 0),
+        pct: entry.duration > 0 ? Math.min(100, Math.round((entry.currentTime / entry.duration) * 100)) : 0,
+        lastUpdated: Date.now()
+      };
+
+      if (existingIdx >= 0) {
+        logs[existingIdx] = updated;
+      } else {
+        logs.unshift(updated);
+      }
+
+      const capped = logs.slice(0, 12);
+      try {
+        localStorage.setItem(FLIGHT_LOG_KEY, JSON.stringify(capped));
+      } catch (e) {}
+
+      renderFlightLogsUI();
+    }
+
+    function removeFlightLog(id, e) {
+      if (e) e.stopPropagation();
+      playPaperTick();
+      const logs = loadFlightLogs().filter(l => l.id !== id);
+      try {
+        localStorage.setItem(FLIGHT_LOG_KEY, JSON.stringify(logs));
+      } catch (e) {}
+      renderFlightLogsUI();
+    }
+
+    function clearAllFlightLogs() {
+      playPaperTick();
+      if (confirm("CLEAR ALL FLIGHT LOGS?\nThis will remove your continue watching history.")) {
+        localStorage.removeItem(FLIGHT_LOG_KEY);
+        renderFlightLogsUI();
+      }
+    }
+
+    function formatTime(seconds) {
+      if (!seconds || isNaN(seconds) || seconds < 0) return "0:00";
+      const s = Math.floor(seconds);
+      const hrs = Math.floor(s / 3600);
+      const mins = Math.floor((s % 3600) / 60);
+      const secs = s % 60;
+      if (hrs > 0) {
+        return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      }
+      return `${mins}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function renderFlightLogsUI() {
+      const section = document.getElementById("missionFlightLogSection");
+      const container = document.getElementById("flightLogCardsContainer");
+      const badge = document.getElementById("flightLogCountBadge");
+      if (!section || !container) return;
+
+      const logs = loadFlightLogs();
+      if (!logs.length) {
+        section.classList.add("hidden");
+        section.classList.remove("flex");
+        return;
+      }
+
+      section.classList.remove("hidden");
+      section.classList.add("flex");
+      if (badge) badge.innerText = `${logs.length} ACTIVE`;
+
+      container.innerHTML = "";
+      logs.forEach(log => {
+        const card = document.createElement("div");
+        card.className = "flight-log-card receipt-card rounded-lg p-2.5 border border-[var(--depth-border)] bg-[var(--depth-card)] flex flex-col justify-between gap-2.5 relative group overflow-hidden cursor-pointer";
+        card.onclick = () => resumeFlightLog(log);
+
+        const posterUrl = log.poster || log.backdrop || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80";
+        const isSeries = !!(log.season && log.episode);
+        const remainingSec = Math.max(0, log.duration - log.currentTime);
+        const remainingStr = remainingSec > 60 ? `${Math.round(remainingSec / 60)}m left` : `${remainingSec}s left`;
+        const timeStr = `${formatTime(log.currentTime)} / ${formatTime(log.duration)}`;
+
+        card.innerHTML = `
+          <div class="card-reticle card-reticle-tl"></div>
+          <div class="card-reticle card-reticle-br"></div>
+
+          <div class="flex gap-2.5 items-start">
+            <div class="relative w-14 h-20 bg-black rounded overflow-hidden shrink-0 border border-[var(--depth-border)]">
+              <img src="${posterUrl}" alt="${log.title}" class="w-full h-full object-cover" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80';" />
+              <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+            </div>
+
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between gap-1">
+                <span class="text-[9px] font-mono px-1.5 py-0.2 rounded font-bold ${isSeries ? 'bg-[var(--depth-coral)]/20 text-[var(--depth-coral)] border border-[var(--depth-coral)]/40' : 'bg-[var(--depth-mid)]/20 text-[var(--depth-mid)] border border-[var(--depth-mid)]/40'}">
+                  ${isSeries ? `S${String(log.season).padStart(2,'0')}:E${String(log.episode).padStart(2,'0')}` : 'MOVIE'}
+                </span>
+                <button onclick="removeFlightLog('${log.id}', event)" class="text-[10px] text-[var(--ink-faint)] hover:text-[var(--depth-coral)] px-1" title="Dismiss from flight log">
+                  ✕
+                </button>
+              </div>
+
+              <h4 class="text-xs font-bold font-hud truncate text-white mt-1 group-hover:text-[var(--depth-mid)] transition" title="${log.title}">
+                ${log.title}
+              </h4>
+              ${log.epTitle ? `<p class="text-[10px] text-[var(--ink-dim)] font-mono truncate">${log.epTitle}</p>` : ''}
+
+              <div class="flex items-center justify-between text-[9px] font-mono text-[var(--ink-faint)] mt-1">
+                <span>${timeStr}</span>
+                <span class="text-[var(--depth-near)] font-bold">${remainingStr}</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <!-- Glowing Progress Bar -->
+            <div class="w-full bg-black/60 h-1.5 rounded-full overflow-hidden border border-[var(--depth-border)]">
+              <div class="bg-gradient-to-r from-[var(--depth-coral)] via-[var(--depth-near)] to-[var(--depth-mid)] h-full transition-all" style="width: ${log.pct}%"></div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center gap-1.5 pt-2">
+              <button class="depth-btn-primary flex-1 py-1 rounded text-[10px] font-hud font-bold uppercase tracking-wider active:scale-95 flex items-center justify-center gap-1">
+                <span>▶ RESUME AT ${formatTime(log.currentTime)}</span>
+              </button>
+              ${isSeries ? `
+                <button onclick="event.stopPropagation(); openEpisodeMatrix({ title: '${log.title.replace(/'/g, "\\'")}', imdb: '${log.imdb || ''}', poster: '${log.poster || ''}' })" class="depth-btn px-2 py-1 rounded text-[10px] font-hud text-[var(--ink-dim)] hover:text-white" title="Open Episode Matrix">
+                  ⊞
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    function resumeFlightLog(log) {
+      playPaperFeed();
+      if (!apiKey) {
+        alert("AUTHENTICATION REQUIRED:\nPlease enter your TorBox API token in the top input slot before streaming.");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      autoPlayBestTorrent(
+        { title: log.title, poster: log.poster, imdb: log.imdb, type: log.season ? 'series' : 'movie' },
+        log.season,
+        log.episode,
+        log.epTitle,
+        log.currentTime
+      );
+    }
+
+    // ============================================================
+    // FEATURE 1: INTERACTIVE SEASON & EPISODE MATRIX (BINGE HUD)
+    // Drawer/modal, episode cards, direct streaming, and countdown overlay
+    // ============================================================
+    let currentMatrixSeries = null;
+    let matrixData = null;
+    let activeMatrixSeason = 1;
+    let bingeCountdownTimer = null;
+    let bingeSecondsRemaining = 10;
+    let pendingNextEpisode = null;
+    let lastFlightLogSaveTime = 0;
+    let pendingSeekTime = 0;
+
+    async function openEpisodeMatrix(seriesItem) {
+      playPaperFeed();
+      currentMatrixSeries = (typeof seriesItem === "string") ? { title: seriesItem } : seriesItem;
+
+      const modal = document.getElementById("episodeMatrixModal");
+      const titleEl = document.getElementById("matrixTitle");
+      const posterEl = document.getElementById("matrixPoster");
+      const yearEl = document.getElementById("matrixYear");
+      const ratingEl = document.getElementById("matrixRating");
+      const overviewEl = document.getElementById("matrixOverview");
+      const grid = document.getElementById("matrixEpisodesGrid");
+      const pillsRow = document.getElementById("matrixSeasonPills");
+      const badge = document.getElementById("matrixEpisodeCountBadge");
+
+      if (!modal) return;
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+
+      if (titleEl) titleEl.innerText = currentMatrixSeries.title || "TV SERIES MATRIX";
+      if (posterEl) posterEl.src = currentMatrixSeries.poster || currentMatrixSeries.backdrop || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80";
+      if (yearEl) yearEl.innerText = currentMatrixSeries.year || "";
+      if (ratingEl) ratingEl.innerText = currentMatrixSeries.rating ? `★ ${currentMatrixSeries.rating}` : "";
+      if (overviewEl) overviewEl.innerText = currentMatrixSeries.overview || "Select a season and episode to calibrate instant cloud debrid streaming.";
+
+      if (pillsRow) pillsRow.innerHTML = "";
+      if (badge) badge.innerText = "CALIBRATING...";
+      if (grid) {
+        grid.innerHTML = `
+          <div class="col-span-full flex flex-col items-center justify-center py-12 gap-2 text-[var(--depth-mid)] font-mono text-xs">
+            <div class="w-6 h-6 border-2 border-[var(--depth-mid)] border-t-transparent rounded-full animate-spin"></div>
+            <span>QUERYING VOLUMETRIC SERIES EPISODES MATRIX...</span>
+          </div>
+        `;
+      }
+
+      try {
+        const imdbParam = currentMatrixSeries.imdb || (currentMatrixSeries.id && currentMatrixSeries.id.startsWith("tt") ? currentMatrixSeries.id : "");
+        const res = await fetch(`/api/series-episodes?imdb=${encodeURIComponent(imdbParam)}&q=${encodeURIComponent(currentMatrixSeries.title || '')}`);
+        const data = await res.json();
+
+        if (!data || !data.success || !data.seasons || !Object.keys(data.seasons).length) {
+          if (grid) grid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--depth-coral)] py-12 font-mono">NO EPISODE ROSTERS RETURNED FOR THIS SERIES.</p>`;
+          return;
+        }
+
+        matrixData = data;
+        if (titleEl && data.title) titleEl.innerText = data.title;
+        if (posterEl && data.poster) posterEl.src = data.poster;
+
+        // Render Season Pills
+        const seasonKeys = Object.keys(data.seasons).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+        activeMatrixSeason = seasonKeys.includes("1") ? 1 : parseInt(seasonKeys[0], 10);
+
+        if (pillsRow) {
+          pillsRow.innerHTML = "";
+          seasonKeys.forEach(sKey => {
+            const btn = document.createElement("button");
+            const sNum = parseInt(sKey, 10);
+            btn.className = `receipt-btn px-3 py-1 rounded text-xs tracking-wider uppercase font-bold transition ${sNum === activeMatrixSeason ? 'season-pill-active' : 'text-[var(--ink-dim)]'}`;
+            btn.innerText = `SEASON ${String(sNum).padStart(2, '0')}`;
+            btn.onclick = () => renderSeasonEpisodes(sNum);
+            pillsRow.appendChild(btn);
+          });
+        }
+
+        renderSeasonEpisodes(activeMatrixSeason);
+
+      } catch (err) {
+        if (grid) grid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--depth-coral)] py-12 font-mono">FAILED TO LOAD SERIES EPISODES: ${err.message}</p>`;
+      }
+    }
+
+    function closeEpisodeMatrix() {
+      playPaperTick();
+      const modal = document.getElementById("episodeMatrixModal");
+      if (modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+      }
+    }
+
+    function renderSeasonEpisodes(seasonNum) {
+      playPaperTick();
+      activeMatrixSeason = seasonNum;
+
+      // Update active pill styling
+      const pills = document.querySelectorAll("#matrixSeasonPills button");
+      pills.forEach((p) => {
+        const match = p.innerText.includes(String(seasonNum).padStart(2, '0'));
+        if (match) {
+          p.classList.add("season-pill-active");
+          p.classList.remove("text-[var(--ink-dim)]");
+        } else {
+          p.classList.remove("season-pill-active");
+          p.classList.add("text-[var(--ink-dim)]");
+        }
+      });
+
+      const grid = document.getElementById("matrixEpisodesGrid");
+      const badge = document.getElementById("matrixEpisodeCountBadge");
+      if (!grid || !matrixData || !matrixData.seasons) return;
+
+      const episodes = matrixData.seasons[String(seasonNum)] || [];
+      if (badge) badge.innerText = `${episodes.length} EPISODES`;
+
+      if (!episodes.length) {
+        grid.innerHTML = `<p class="col-span-full text-center text-xs text-[var(--ink-dim)] py-8 font-mono">NO EPISODES REGISTERED IN SEASON ${seasonNum}.</p>`;
+        return;
+      }
+
+      const logs = loadFlightLogs();
+
+      grid.innerHTML = "";
+      episodes.forEach(ep => {
+        const card = document.createElement("div");
+        card.className = "episode-matrix-card receipt-card rounded-lg p-3 border border-[var(--depth-border)] bg-[var(--depth-card)] flex flex-col justify-between gap-2.5 relative group overflow-hidden";
+
+        const thumbUrl = ep.thumbnail || matrixData.poster || currentMatrixSeries?.poster || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80";
+        const epNumStr = String(ep.episode).padStart(2, '0');
+        const seasonNumStr = String(seasonNum).padStart(2, '0');
+
+        const watchedLog = logs.find(l => (l.title === matrixData.title || l.title === currentMatrixSeries?.title) && l.season === seasonNum && l.episode === ep.episode);
+
+        card.innerHTML = `
+          <div class="card-reticle card-reticle-tl"></div>
+          <div class="card-reticle card-reticle-br"></div>
+
+          <div class="flex gap-3 items-start">
+            <div class="relative w-24 sm:w-28 aspect-video bg-black rounded overflow-hidden shrink-0 border border-[var(--depth-border)] shadow">
+              <img src="${thumbUrl}" alt="${ep.title}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80';" loading="lazy" />
+              <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+              <span class="absolute bottom-1 left-1.5 font-mono text-[9px] font-bold text-white bg-black/80 px-1 rounded">
+                EP ${epNumStr}
+              </span>
+            </div>
+
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between gap-1 text-[10px] font-mono">
+                <span class="text-[var(--depth-mid)] font-bold">S${seasonNumStr}E${epNumStr}</span>
+                ${watchedLog ? `<span class="text-[var(--ink-success)] font-bold">✓ WATCHED (${watchedLog.pct}%)</span>` : (ep.released ? `<span class="text-[var(--ink-faint)]">${ep.released.slice(0, 10)}</span>` : '')}
+              </div>
+
+              <h4 class="text-xs sm:text-sm font-bold font-hud text-white truncate mt-0.5 group-hover:text-[var(--depth-mid)] transition" title="${ep.title}">
+                ${ep.title}
+              </h4>
+              <p class="text-[10px] text-[var(--ink-dim)] font-mono line-clamp-2 mt-1 leading-relaxed">
+                ${ep.overview || 'Instant debrid stream packet available for this episode.'}
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between pt-1 border-t border-dashed border-[var(--depth-border-dashed)]">
+            <span class="text-[9px] font-mono text-[var(--ink-faint)]">TORBOX DIRECT MP4</span>
+            <button class="btn-stream-ep depth-btn-primary px-3 py-1 rounded text-xs font-hud font-bold uppercase tracking-wider active:scale-95 flex items-center gap-1.5">
+              <span>▶ STREAM EPISODE</span>
+            </button>
+          </div>
+        `;
+
+        const streamBtn = card.querySelector(".btn-stream-ep");
+        if (streamBtn) {
+          streamBtn.onclick = () => {
+            closeEpisodeMatrix();
+            streamEpisode(matrixData || currentMatrixSeries, seasonNum, ep.episode, ep.title);
+          };
+        }
+
+        grid.appendChild(card);
+      });
+    }
+
+    function streamEpisode(seriesItem, season, episode, epTitle, initialSeek = 0) {
+      playPaperFeed();
+      autoPlayBestTorrent(
+        {
+          title: seriesItem.title,
+          poster: seriesItem.poster,
+          backdrop: seriesItem.backdrop,
+          imdb: seriesItem.imdb || seriesItem.id,
+          type: "series"
+        },
+        season,
+        episode,
+        epTitle,
+        initialSeek
+      );
+    }
+
+    function checkBingeAutoAdvance() {
+      if (!art || !art.video || !activeTargetMedia || !activeTargetMedia.season || !activeTargetMedia.episode) return;
+      if (bingeCountdownTimer) return;
+
+      const dur = art.duration || 0;
+      const cur = art.currentTime || 0;
+      if (dur < 40) return;
+
+      const remaining = dur - cur;
+      if (remaining <= 15 && remaining > 0) {
+        const currentS = activeTargetMedia.season;
+        const currentE = activeTargetMedia.episode;
+        const nextE = currentE + 1;
+
+        pendingNextEpisode = {
+          season: currentS,
+          episode: nextE,
+          title: `Episode ${nextE}`
+        };
+
+        if (matrixData && matrixData.seasons && matrixData.seasons[String(currentS)]) {
+          const found = matrixData.seasons[String(currentS)].find(ep => ep.episode === nextE);
+          if (found) {
+            pendingNextEpisode.title = found.title;
+          }
+        }
+
+        showBingeCountdownOverlay();
+      }
+    }
+
+    function showBingeCountdownOverlay() {
+      const overlay = document.getElementById("bingeCountdownOverlay");
+      const titleEl = document.getElementById("bingeNextEpTitle");
+      const secEl = document.getElementById("bingeSecondsCount");
+      const bar = document.getElementById("bingeProgressBar");
+      if (!overlay || !pendingNextEpisode) return;
+
+      bingeSecondsRemaining = 10;
+      if (secEl) secEl.innerText = String(bingeSecondsRemaining);
+      if (titleEl) titleEl.innerText = `S${String(pendingNextEpisode.season).padStart(2,'0')}E${String(pendingNextEpisode.episode).padStart(2,'0')}: ${pendingNextEpisode.title}`;
+      if (bar) bar.style.width = "100%";
+
+      overlay.classList.remove("hidden");
+      overlay.classList.add("flex");
+
+      if (bingeCountdownTimer) clearInterval(bingeCountdownTimer);
+      bingeCountdownTimer = setInterval(() => {
+        bingeSecondsRemaining--;
+        if (secEl) secEl.innerText = String(bingeSecondsRemaining);
+        if (bar) bar.style.width = `${(bingeSecondsRemaining / 10) * 100}%`;
+
+        if (bingeSecondsRemaining <= 0) {
+          clearInterval(bingeCountdownTimer);
+          bingeCountdownTimer = null;
+          dispatchNextEpisodeNow();
+        }
+      }, 1000);
+    }
+
+    function cancelBingeCountdown() {
+      playPaperTick();
+      if (bingeCountdownTimer) {
+        clearInterval(bingeCountdownTimer);
+        bingeCountdownTimer = null;
+      }
+      const overlay = document.getElementById("bingeCountdownOverlay");
+      if (overlay) {
+        overlay.classList.add("hidden");
+        overlay.classList.remove("flex");
+      }
+    }
+
+    function dispatchNextEpisodeNow() {
+      cancelBingeCountdown();
+      if (!pendingNextEpisode || !activeTargetMedia) return;
+      streamEpisode(activeTargetMedia, pendingNextEpisode.season, pendingNextEpisode.episode, pendingNextEpisode.title);
+    }
+
     // ==========================================
     // 5. Console Department View Switcher
     // ==========================================
@@ -1492,6 +2469,7 @@
       });
 
       if (view === "library") fetchLibrary();
+      if (view === "discover") renderFlightLogsUI();
     }
 
     // ==========================================
@@ -1637,6 +2615,11 @@
               <button class="btn-hero-play depth-btn-primary px-5 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-bold tracking-wider font-hud uppercase flex items-center gap-2 active:scale-95 transition">
                 <span>▶ STREAM NOW (BEST MP4)</span>
               </button>
+              ${(item.type === 'series' || type === 'series' || type === 'anime') ? `
+                <button class="btn-hero-episodes depth-btn px-4 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-hud tracking-wider uppercase text-[var(--depth-mid)] border-[var(--depth-mid)]/40 hover:border-[var(--depth-mid)] active:scale-95 transition flex items-center gap-1.5">
+                  <span>⊞ EPISODES</span>
+                </button>
+              ` : ''}
               <button class="btn-hero-radar depth-btn px-4 py-2 sm:py-2.5 rounded text-xs sm:text-sm font-mono tracking-wider uppercase text-[var(--ink-primary)] hover:border-[var(--depth-mid)] active:scale-95 transition flex items-center gap-1.5">
                 <span>[ 🔍 SWARM RADAR ]</span>
               </button>
@@ -1646,8 +2629,10 @@
 
         const playBtn = slide.querySelector(".btn-hero-play");
         const radarBtn = slide.querySelector(".btn-hero-radar");
+        const epBtn = slide.querySelector(".btn-hero-episodes");
         if (playBtn) playBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); autoPlayBestTorrent(item); };
         if (radarBtn) radarBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); selectRecommendation(item); };
+        if (epBtn) epBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); openEpisodeMatrix(item); };
 
         track.appendChild(slide);
 
@@ -1795,6 +2780,11 @@
             </div>
 
             <div class="flex flex-col gap-1 w-full pt-1">
+              ${(item.type === 'series' || type === 'series' || type === 'anime') ? `
+                <button class="btn-episodes depth-btn w-full py-1 rounded text-[10px] tracking-wider uppercase font-bold text-[var(--depth-mid)] border-[var(--depth-mid)]/40 hover:border-[var(--depth-mid)] active:scale-95 flex items-center justify-center gap-1 font-hud">
+                  <span>⊞ SEASONS &amp; EPISODES</span>
+                </button>
+              ` : ''}
               <button class="btn-autoplay depth-btn-primary w-full py-1.5 rounded text-[10px] tracking-wider uppercase font-bold active:scale-95 flex items-center justify-center gap-1 font-hud">
                 <span>▶ PLAY BEST MP4</span>
               </button>
@@ -1806,8 +2796,10 @@
 
           const autoPlayBtn = card.querySelector(".btn-autoplay");
           const browseBtn = card.querySelector(".btn-browse");
+          const episodesBtn = card.querySelector(".btn-episodes");
           if (autoPlayBtn) autoPlayBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); autoPlayBestTorrent(item); };
           if (browseBtn) browseBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); selectRecommendation(item); };
+          if (episodesBtn) episodesBtn.onclick = (e) => { e.stopPropagation(); playPaperFeed(); openEpisodeMatrix(item); };
 
           catalogGrid.appendChild(card);
         });
@@ -1830,7 +2822,7 @@
     const mediaSub = document.getElementById("mediaSub");
     const externalPlayBtn = document.getElementById("externalPlayBtn");
 
-    async function autoPlayBestTorrent(item) {
+    async function autoPlayBestTorrent(item, season = null, episode = null, epTitle = null, initialSeek = 0) {
       playPaperFeed();
       if (!apiKey) {
         alert("AUTHENTICATION REQUIRED:\nPlease enter your TorBox API token in the top input slot before streaming.");
@@ -1838,13 +2830,33 @@
         return;
       }
 
-      activeTargetMedia = (typeof item === "string") ? { title: item, poster: null } : item;
+      pendingSeekTime = initialSeek || 0;
+
+      if (season !== null && episode !== null) {
+        activeTargetMedia = (typeof item === "string")
+          ? { title: item, poster: null, season, episode, epTitle, type: "series" }
+          : { ...item, season, episode, epTitle, type: "series" };
+        mediaTitle.innerText = `${activeTargetMedia.title} // S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}${epTitle ? ' - ' + epTitle : ''}`;
+        const epBtn = document.getElementById("playerEpisodesBtn");
+        if (epBtn) epBtn.classList.remove("hidden");
+      } else {
+        activeTargetMedia = (typeof item === "string") ? { title: item, poster: null } : item;
+        mediaTitle.innerText = activeTargetMedia.title;
+        const epBtn = document.getElementById("playerEpisodesBtn");
+        if (epBtn) {
+          if (activeTargetMedia.type === 'series' || activeTargetMedia.type === 'anime') {
+            epBtn.classList.remove("hidden");
+          } else {
+            epBtn.classList.add("hidden");
+          }
+        }
+      }
+
       isAutoPlayActive = true;
 
       // 1. Reveal player area immediately & scroll up
       playerSection.classList.remove("hidden");
       playerSection.classList.add("flex");
-      mediaTitle.innerText = activeTargetMedia.title;
       mediaSub.innerHTML = `
         <span class="text-[var(--depth-mid)] font-bold animate-pulse">⚡ AUTONOMOUS SWARM SCANNER:</span>
         <span class="text-[var(--ink-primary)] font-mono"> LOCATING PLAYABLE MP4 POINT CLOUD CANDIDATES...</span>
@@ -1853,7 +2865,11 @@
 
       try {
         // 2. Fetch top MP4 torrents (pre-sorted by seeds descending by server)
-        const res = await fetch(`/search-torrents?q=${encodeURIComponent(activeTargetMedia.title)}&format=mp4&limit=30`);
+        let searchUrl = `/search-torrents?q=${encodeURIComponent(activeTargetMedia.title)}&format=mp4&limit=30`;
+        if (activeTargetMedia.season && activeTargetMedia.episode) {
+          searchUrl += `&season=${activeTargetMedia.season}&episode=${activeTargetMedia.episode}`;
+        }
+        const res = await fetch(searchUrl);
         const results = await res.json();
 
         let candidates = Array.isArray(results) ? results.filter(t => t.is_mp4 !== false && isClientMp4(t.name)) : [];
@@ -3187,7 +4203,13 @@
     async function playFile(torrentId, fileId, fileName, imdbId) {
       playerSection.classList.remove("hidden");
       playerSection.classList.add("flex");
-      mediaTitle.innerText = fileName.split("/").pop();
+      if (activeTargetMedia && activeTargetMedia.season) {
+        const sStr = String(activeTargetMedia.season).padStart(2, "0");
+        const eStr = String(activeTargetMedia.episode || 1).padStart(2, "0");
+        mediaTitle.innerText = `${activeTargetMedia.title} // S${sStr}E${eStr}${activeTargetMedia.epTitle ? ` - ${activeTargetMedia.epTitle}` : ""}`;
+      } else {
+        mediaTitle.innerText = fileName.split("/").pop();
+      }
       mediaSub.innerText = "CALIBRATING DIRECT CLOUD STREAMING PIPELINE...";
       window.scrollTo({ top: 0, behavior: "smooth" });
 
@@ -3291,6 +4313,47 @@
         currentImdbId = imdbId || activeImdbId || activeTargetMedia?.id || activeTargetMedia?.imdb || null;
         discoverSubtitles(torrentId, fileName, currentImdbId);
 
+        // Seek to pending resume timestamp if launching from Flight Log
+        if (pendingSeekTime > 0) {
+          art.on("video:canplay", () => {
+            if (pendingSeekTime > 0 && art && art.video) {
+              art.seek = pendingSeekTime;
+              pendingSeekTime = 0;
+            }
+          }, { once: true });
+        }
+
+        // Throttled Flight Log recorder (records watch progress every 3.5s)
+        let lastFlightLogSave = 0;
+        art.on("video:timeupdate", () => {
+          const now = Date.now();
+          if (now - lastFlightLogSave > 3500 && art.video && art.duration > 5) {
+            lastFlightLogSave = now;
+            saveFlightLog({
+              title: activeTargetMedia?.title || fileName.split("/").pop(),
+              poster: activeTargetMedia?.poster || "",
+              backdrop: activeTargetMedia?.backdrop || "",
+              type: activeTargetMedia?.type || (activeTargetMedia?.season ? "series" : "movie"),
+              imdb: currentImdbId || activeTargetMedia?.imdb || "",
+              season: activeTargetMedia?.season || null,
+              episode: activeTargetMedia?.episode || null,
+              epTitle: activeTargetMedia?.epTitle || null,
+              currentTime: art.currentTime || 0,
+              duration: art.duration || 0,
+              torrentId: torrentId,
+              fileId: fileId,
+              fileName: fileName
+            });
+          }
+        });
+
+        // Binge HUD triggers when video ends naturally
+        art.on("video:ended", () => {
+          if (activeTargetMedia && activeTargetMedia.season) {
+            showBingeCountdownOverlay();
+          }
+        });
+
         mediaSub.innerText = "BUFFERING DIRECT DEBRID STREAM FROM TORBOX CDN...";
 
         // Continuous Playback Watchdog Engine
@@ -3328,6 +4391,9 @@
         // Active 1-second watchdog interval
         playbackWatchdogTimer = setInterval(() => {
           elapsedSeconds++;
+
+          // Check for Binge Next Episode countdown trigger near end
+          checkBingeAutoAdvance();
 
           if (!art || !art.video) {
             clearAllPlaybackMonitors();
@@ -3412,6 +4478,7 @@
 
     function closePlayer() {
       clearAllPlaybackMonitors();
+      cancelBingeCountdown();
       if (art) {
         try { art.destroy(); } catch (e) {}
         art = null;
@@ -3444,6 +4511,8 @@
     // Initialize with Movie Inventory, Key Status & Security Lock State
     updateApiKeyStatusUI();
     checkInitialLockState();
+    initLidarGlobe();
+    renderFlightLogsUI();
     loadCatalog("movies");
   </script>
 </body>

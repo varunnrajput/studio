@@ -85,6 +85,7 @@ const TMDB_API_KEYS = [
   "8476a7ab80ad76f0936744df0430e67c",
   "4f298a53e5522830ce95f3859f10ac84"
 ];
+const TMDB_API_KEY = TMDB_API_KEYS[0];
 
 async function getTrendingMovies() {
   const now = Date.now();
@@ -469,9 +470,11 @@ const FRANCHISE_PREFIXES = /^(?:marvel(?:'s)?|disney(?:\s*\+|\s*plus)?(?:'s)?|dc
 
 // In-memory metadata resolution cache (1 hour TTL)
 const metaCache = new Map();
+// In-memory TV series episode matrix cache (24 hour TTL)
+const episodesCache = new Map();
 
 // Helper: Normalize queries and generate smart search variations with prefix stripping
-function buildSearchQueries(raw, matchedMetaTitle = null, format = "mp4") {
+function buildSearchQueries(raw, matchedMetaTitle = null, format = "mp4", season = null, episode = null) {
   const queries = [];
   const add = (str) => {
     if (!str) return;
@@ -482,6 +485,31 @@ function buildSearchQueries(raw, matchedMetaTitle = null, format = "mp4") {
   };
 
   const isMp4 = format === "mp4" || format === "mp4_only";
+
+  // If specific season & episode requested
+  if (season !== null && episode !== null && season !== undefined && episode !== undefined) {
+    const sStr = String(season).padStart(2, "0");
+    const eStr = String(episode).padStart(2, "0");
+    const epTag1 = `S${sStr}E${eStr}`;
+    const epTag2 = `${season}x${eStr}`;
+    const epTag3 = `S${sStr}`;
+
+    if (matchedMetaTitle) {
+      add(`${matchedMetaTitle} ${epTag1}`);
+      add(`${matchedMetaTitle} ${epTag2}`);
+      if (isMp4) add(`${matchedMetaTitle} ${epTag1} mp4`);
+      add(`${matchedMetaTitle} ${epTag3}`);
+    }
+
+    const stripped = raw.replace(FRANCHISE_PREFIXES, "").trim();
+    add(`${stripped} ${epTag1}`);
+    add(`${stripped} ${epTag2}`);
+    if (isMp4) add(`${stripped} ${epTag1} mp4`);
+    add(`${stripped} ${epTag3}`);
+
+    add(`${raw} ${epTag1}`);
+    return queries;
+  }
 
   // 1. If we matched official title (e.g. "Moon Knight" for "marvel moon knight")
   if (matchedMetaTitle) {
@@ -537,16 +565,19 @@ function extractCleanTitleAndYear(raw) {
 }
 
 // Helper: Resolve precise media metadata using TMDB with Cinemeta fallback
-async function resolveMediaMeta(rawQuery) {
-  if (!rawQuery || typeof rawQuery !== "string") return null;
-  const cacheKey = rawQuery.toLowerCase().trim();
+async function resolveMediaMeta(rawQuery, preferType = null) {
+  if (!rawQuery) return null;
+  const queryString = Array.isArray(rawQuery) ? rawQuery[0] : rawQuery;
+  if (typeof queryString !== "string" || !queryString.trim()) return null;
+  const cacheKey = queryString.toLowerCase().trim() + (preferType ? `_${preferType}` : "");
   const cached = metaCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < 3600000) {
     return cached.data;
   }
 
-  const stripped = rawQuery.replace(FRANCHISE_PREFIXES, "").trim();
-  const searchTerms = [stripped, rawQuery].filter(Boolean);
+  const stripped = queryString.replace(FRANCHISE_PREFIXES, "").trim();
+  const candidatesList = Array.isArray(rawQuery) ? rawQuery : [stripped, queryString];
+  const searchTerms = [...new Set(candidatesList.filter(Boolean))];
 
   let result = null;
 
@@ -556,7 +587,12 @@ async function resolveMediaMeta(rawQuery) {
       const res = await fetch(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(term)}&api_key=${TMDB_API_KEY}`, { signal: AbortSignal.timeout(2500) });
       if (res.ok) {
         const json = await res.json();
-        const candidates = (json.results || []).filter(r => r.media_type === "movie" || r.media_type === "tv");
+        let candidates = (json.results || []).filter(r => r.media_type === "movie" || r.media_type === "tv");
+        if (preferType === "series") {
+          candidates = candidates.sort((a, b) => (a.media_type === "tv" ? -1 : 1));
+        } else if (preferType === "movie") {
+          candidates = candidates.sort((a, b) => (a.media_type === "movie" ? -1 : 1));
+        }
         if (candidates.length) {
           const lowerTerm = term.toLowerCase();
           const best = candidates.find(r => (r.title || r.name || "").toLowerCase().includes(lowerTerm)) || candidates[0];
@@ -573,10 +609,14 @@ async function resolveMediaMeta(rawQuery) {
 
           result = {
             id: imdbId || `tmdb:${best.id}`,
+            imdb_id: imdbId,
+            tmdb_id: best.id,
             name: best.title || best.name,
             year: (best.release_date || best.first_air_date || "").slice(0, 4),
             rating: best.vote_average ? best.vote_average.toFixed(1) : null,
             poster: best.poster_path ? `https://image.tmdb.org/t/p/w500${best.poster_path}` : null,
+            backdrop: best.backdrop_path ? `https://image.tmdb.org/t/p/w1280${best.backdrop_path}` : null,
+            overview: best.overview || "",
             type: type
           };
           break;
@@ -593,14 +633,23 @@ async function resolveMediaMeta(rawQuery) {
           fetch(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(term)}.json`, { signal: AbortSignal.timeout(2500) }).then(r=>r.json()).catch(()=>null),
           fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(term)}.json`, { signal: AbortSignal.timeout(2500) }).then(r=>r.json()).catch(()=>null)
         ]);
-        const metas = [...(sRes?.metas || []), ...(mRes?.metas || [])];
+        let metas = [];
+        if (preferType === "series") {
+          metas = [...(sRes?.metas || []), ...(mRes?.metas || [])];
+        } else {
+          metas = [...(mRes?.metas || []), ...(sRes?.metas || [])];
+        }
         if (metas.length) {
           result = {
             id: metas[0].id,
+            imdb_id: metas[0].id && metas[0].id.startsWith("tt") ? metas[0].id : null,
+            tmdb_id: null,
             name: metas[0].name,
             year: metas[0].releaseInfo || metas[0].year,
             rating: metas[0].imdbRating,
             poster: metas[0].poster,
+            backdrop: metas[0].background || null,
+            overview: metas[0].description || "",
             type: metas[0].type
           };
           break;
@@ -616,12 +665,17 @@ async function resolveMediaMeta(rawQuery) {
   return result;
 }
 
+
 // Helper: Multi-engine Federated Swarm Scraper (Torrentio + EZTV + Apibay + SolidTorrents + YTS + Nyaa)
-async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4") {
-  const queryCandidates = buildSearchQueries(query, matchedMeta?.name, format);
+async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4", season = null, episode = null) {
+  const queryCandidates = buildSearchQueries(query, matchedMeta?.name, format, season, episode);
   const primaryQuery = queryCandidates[0] || query;
-  const imdbId = matchedMeta?.id && matchedMeta.id.startsWith("tt") ? matchedMeta.id : null;
+  const imdbId = matchedMeta?.id && matchedMeta.id.startsWith("tt") ? matchedMeta.id : (matchedMeta?.imdb_id || null);
   const cleanImdbDigits = imdbId ? imdbId.replace(/^tt/, "") : null;
+  const hasSeasonEp = (season !== null && episode !== null && season !== undefined && episode !== undefined);
+  const sStr = hasSeasonEp ? String(season).padStart(2, "0") : null;
+  const eStr = hasSeasonEp ? String(episode).padStart(2, "0") : null;
+  const epTag = hasSeasonEp ? `s${sStr}e${eStr}` : null;
 
   const trackers = [
     "udp://tracker.opentrackr.org:1337/announce",
@@ -644,6 +698,13 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
     const hasImdb = (item.imdb && typeof item.imdb === "string" && item.imdb.startsWith("tt")) ? item.imdb : imdbId;
     const poster = matchedMeta?.poster || (hasImdb ? `https://images.metahub.space/poster/small/${hasImdb}/img` : null);
 
+    let isEpMatch = item.is_episode_match || false;
+    if (hasSeasonEp && !isEpMatch && epTag) {
+      if ((item.name || "").toLowerCase().includes(epTag)) {
+        isEpMatch = true;
+      }
+    }
+
     allTorrents.push({
       name: item.name,
       info_hash: item.info_hash || null,
@@ -655,6 +716,7 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
       imdb: hasImdb,
       poster: poster,
       is_mp4: isMp4,
+      is_episode_match: isEpMatch,
       container: isMp4 ? "mp4" : "mkv",
       source: item.source || "Swarm",
       meta: matchedMeta ? {
@@ -674,22 +736,35 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
   if (imdbId) {
     scrapers.push((async () => {
       try {
-        const streamUrls = matchedMeta?.type === "series"
-          ? [
-              `https://torrentio.strem.fun/stream/series/${imdbId}:1:1.json`,
-              `https://torrentio.strem.fun/stream/series/${imdbId}:1:2.json`
-            ]
-          : [`https://torrentio.strem.fun/stream/movie/${imdbId}.json`];
+        let streamUrls = [];
+        if (hasSeasonEp) {
+          streamUrls = [
+            `https://torrentio.strem.fun/stream/series/${imdbId}:${season}:${episode}.json`
+          ];
+        } else if (matchedMeta?.type === "series") {
+          streamUrls = [
+            `https://torrentio.strem.fun/stream/series/${imdbId}:1:1.json`,
+            `https://torrentio.strem.fun/stream/series/${imdbId}:1:2.json`
+          ];
+        } else {
+          streamUrls = [`https://torrentio.strem.fun/stream/movie/${imdbId}.json`];
+        }
 
         for (const sUrl of streamUrls) {
-          const res = await fetch(sUrl, { signal: AbortSignal.timeout(3500) });
+          const res = await fetch(sUrl, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+              "Accept": "application/json, text/plain, */*"
+            },
+            signal: AbortSignal.timeout(3500)
+          });
           if (res.ok) {
             const data = await res.json();
             if (Array.isArray(data.streams)) {
               data.streams.forEach(s => {
                 if (!s.infoHash) return;
                 const lines = (s.title || "").split("\n");
-                const name = lines[0] || s.behaviorHints?.filename || `${matchedMeta.name} Stream`;
+                const name = lines[0] || s.behaviorHints?.filename || `${matchedMeta?.name || 'Media'} Stream`;
                 const seedMatch = s.title?.match(/👤\s*(\d+)/);
                 const seeds = seedMatch ? parseInt(seedMatch[1], 10) : 10;
                 const sizeMatch = s.title?.match(/💾\s*([\d.]+)\s*([A-Za-z]+)/);
@@ -707,7 +782,8 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
                   leechers: 0,
                   size: sizeBytes,
                   source: "Torrentio",
-                  imdb: imdbId
+                  imdb: imdbId,
+                  is_episode_match: hasSeasonEp
                 });
               });
             }
@@ -721,12 +797,24 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
   if (cleanImdbDigits) {
     scrapers.push((async () => {
       try {
-        const url = `https://eztvx.to/api/get-torrents?limit=50&imdb_id=${cleanImdbDigits}`;
+        const url = `https://eztvx.to/api/get-torrents?limit=100&imdb_id=${cleanImdbDigits}`;
         const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
         if (res.ok) {
           const json = await res.json();
           if (json.torrents && Array.isArray(json.torrents)) {
             json.torrents.forEach(t => {
+              let isEpMatch = false;
+              if (hasSeasonEp) {
+                const tSeason = parseInt(t.season, 10);
+                const tEp = parseInt(t.episode, 10);
+                const sNum = parseInt(season, 10);
+                const eNum = parseInt(episode, 10);
+                if (tSeason === sNum && tEp === eNum) {
+                  isEpMatch = true;
+                } else if (epTag && (t.title || t.filename || "").toLowerCase().includes(epTag)) {
+                  isEpMatch = true;
+                }
+              }
               addTorrent({
                 name: t.title || t.filename,
                 info_hash: t.hash,
@@ -736,7 +824,8 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
                 size: parseInt(t.size_bytes, 10) || 0,
                 magnet: t.magnet_url,
                 source: "EZTV",
-                imdb: imdbId
+                imdb: imdbId,
+                is_episode_match: isEpMatch
               });
             });
           }
@@ -776,25 +865,26 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
     } catch (e) {}
   })());
 
-  // 4. SolidTorrents (Fast DHT indexer with category=video)
+  // 4. SolidTorrents (Real-time category=video API)
   scrapers.push((async () => {
     try {
-      for (const q of queryCandidates.slice(0, 2)) {
+      for (const q of queryCandidates.slice(0, 3)) {
         const url = `https://solidtorrents.to/api/v1/search?q=${encodeURIComponent(q)}&category=video&sort=seeders`;
-        const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
+        const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
         if (res.ok) {
           const json = await res.json();
           if (json.results && Array.isArray(json.results)) {
             let count = 0;
             json.results.forEach(t => {
-              if (t.title && t.infohash) {
+              if (t.title && t.infoHash) {
                 addTorrent({
                   name: t.title,
-                  info_hash: t.infohash,
-                  seeders: t.seeders || 0,
-                  leechers: t.leechers || 0,
-                  size: t.size || 0,
-                  added: t.createdAt ? Math.floor(Date.parse(t.createdAt) / 1000) || 0 : 0,
+                  info_hash: t.infoHash,
+                  seeders: parseInt(t.swarm?.seeders || 0, 10),
+                  leechers: parseInt(t.swarm?.leechers || 0, 10),
+                  added: Math.floor(Date.parse(t.imported || 0) / 1000) || 0,
+                  size: parseInt(t.size || 0, 10),
+                  magnet: t.magnet,
                   source: "SolidTorrents"
                 });
                 count++;
@@ -807,47 +897,47 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
     } catch (e) {}
   })());
 
-  // 5. YTS Movies Scraper (100% Browser-Native MP4s)
-  scrapers.push((async () => {
-    try {
-      const mirrors = ["https://yts.bz", "https://yts.rs", "https://yts.mx"];
-      for (const rawQ of queryCandidates.slice(0, 2)) {
-        const q = rawQ.replace(/\bmp4\b/gi, "").trim();
-        if (!q) continue;
+  // 5. YTS (High-speed MP4 movie provider - skipped for series episodes)
+  if (!hasSeasonEp && matchedMeta?.type !== "series") {
+    scrapers.push((async () => {
+      try {
         let gotYts = false;
-        for (const m of mirrors) {
-          try {
-            const url = `${m}/api/v2/list_movies.json?query_term=${encodeURIComponent(q)}&limit=20`;
-            const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
-            if (res.ok) {
-              const json = await res.json();
-              if (json.data && Array.isArray(json.data.movies)) {
-                json.data.movies.forEach(movie => {
-                  if (movie.torrents && Array.isArray(movie.torrents)) {
-                    movie.torrents.forEach(t => {
-                      addTorrent({
-                        name: `${movie.title} (${movie.year}) [${t.quality}] [${t.type}] YTS`,
-                        info_hash: t.hash,
-                        seeders: t.seeds || 0,
-                        leechers: t.peers || 0,
-                        added: t.date_uploaded_unix || 0,
-                        size: t.size_bytes || 0,
-                        imdb: movie.imdb_code,
-                        source: "YTS"
-                      }, true);
-                    });
-                  }
-                });
-                gotYts = true;
-                break;
+        const ytsMirrors = ["https://yts.mx", "https://yts.nz", "https://yts.lt"];
+        for (const q of queryCandidates.slice(0, 2)) {
+          for (const m of ytsMirrors) {
+            try {
+              const url = `${m}/api/v2/list_movies.json?query_term=${encodeURIComponent(q)}&limit=20`;
+              const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+              if (res.ok) {
+                const json = await res.json();
+                if (json.status === "ok" && json.data && json.data.movies) {
+                  json.data.movies.forEach(movie => {
+                    if (Array.isArray(movie.torrents)) {
+                      movie.torrents.forEach(t => {
+                        addTorrent({
+                          name: `${movie.title} (${movie.year}) [${t.quality}] [YTS.MX]`,
+                          info_hash: t.hash,
+                          seeders: t.seeds || 0,
+                          leechers: t.peers || 0,
+                          added: t.date_uploaded_unix || 0,
+                          size: parseInt(t.size_bytes, 10) || 0,
+                          source: "YTS",
+                          imdb: movie.imdb_code
+                        }, true);
+                      });
+                    }
+                  });
+                  gotYts = true;
+                  break;
+                }
               }
-            }
-          } catch (e) {}
+            } catch (e) {}
+          }
+          if (gotYts) break;
         }
-        if (gotYts) break;
-      }
-    } catch (e) {}
-  })());
+      } catch (e) {}
+    })());
+  }
 
   // 6. Nyaa.si (Anime RSS Indexer)
   scrapers.push((async () => {
@@ -898,8 +988,12 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
 
   await Promise.allSettled(scrapers);
 
-  // Sorting: If MP4 mode requested, place playable MP4s first, followed by top MKVs
+  // Sorting: If season/episode targeted, place matching episodes first
   allTorrents.sort((a, b) => {
+    if (hasSeasonEp) {
+      if (a.is_episode_match && !b.is_episode_match) return -1;
+      if (!a.is_episode_match && b.is_episode_match) return 1;
+    }
     if (format === "mp4") {
       if (a.is_mp4 && !b.is_mp4) return -1;
       if (!a.is_mp4 && b.is_mp4) return 1;
@@ -1045,9 +1139,12 @@ async function handler(req, res) {
                    reqUrlObj.searchParams.get("format") || 
                    "mp4";
 
+    const season = urlParams.searchParams.get("season") || reqUrlObj.searchParams.get("season") || null;
+    const episode = urlParams.searchParams.get("episode") || reqUrlObj.searchParams.get("episode") || null;
+
     try {
-      const matchedMeta = await resolveMediaMeta(query);
-      const results = await scrapeTorrentSwarm(query, matchedMeta, limit, format);
+      const matchedMeta = await resolveMediaMeta(query, (season && episode) ? "series" : null);
+      const results = await scrapeTorrentSwarm(query, matchedMeta, limit, format, season, episode);
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(results));
@@ -1055,6 +1152,149 @@ async function handler(req, res) {
       console.error("Search torrents handler error:", err);
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Failed to search torrents: " + err.message }));
+    }
+    return;
+  }
+
+  // 2.5 Series Episodes Matrix Engine (/api/series-episodes?imdb=...&tmdb=...&q=...)
+  if (pathname === "/api/series-episodes") {
+    let imdb = urlParams.searchParams.get("imdb") || reqUrlObj.searchParams.get("imdb");
+    let tmdb = urlParams.searchParams.get("tmdb") || reqUrlObj.searchParams.get("tmdb");
+    const q = urlParams.searchParams.get("q") || reqUrlObj.searchParams.get("q") || urlParams.searchParams.get("title") || reqUrlObj.searchParams.get("title");
+
+    try {
+      if (!imdb && !tmdb && q) {
+        const meta = await resolveMediaMeta(q, "series");
+        if (meta) {
+          if (meta.id && meta.id.startsWith("tt")) imdb = meta.id;
+          else if (meta.imdb_id) imdb = meta.imdb_id;
+          if (meta.tmdb_id) tmdb = meta.tmdb_id;
+          else if (meta.id && meta.id.startsWith("tmdb:")) tmdb = meta.id.replace("tmdb:", "");
+        }
+      }
+
+      const cacheKey = (imdb || tmdb || q || "").toLowerCase();
+      if (cacheKey && episodesCache.has(cacheKey)) {
+        const cached = episodesCache.get(cacheKey);
+        if (Date.now() - cached.ts < 24 * 60 * 60 * 1000) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(cached.data));
+          return;
+        }
+      }
+
+      let seriesTitle = q || "";
+      let poster = null;
+      let backdrop = null;
+      let seasonsMap = {};
+
+      // 1. Try Cinemeta first if IMDb ID available
+      if (imdb && imdb.startsWith("tt")) {
+        const cinemetaUrl = `https://v3-cinemeta.strem.io/meta/series/${imdb}.json`;
+        const cineRes = await fetchJson(cinemetaUrl, 4500);
+        if (cineRes && cineRes.meta && Array.isArray(cineRes.meta.videos) && cineRes.meta.videos.length > 0) {
+          seriesTitle = cineRes.meta.name || seriesTitle;
+          poster = cineRes.meta.poster || poster;
+          backdrop = cineRes.meta.background || backdrop;
+
+          cineRes.meta.videos.forEach(v => {
+            const sNum = parseInt(v.season || 1, 10);
+            const epNum = parseInt(v.episode || v.number || 1, 10);
+            if (!seasonsMap[sNum]) seasonsMap[sNum] = [];
+            seasonsMap[sNum].push({
+              season: sNum,
+              episode: epNum,
+              title: v.name || v.title || `Episode ${epNum}`,
+              overview: v.overview || v.description || "",
+              thumbnail: v.thumbnail || (cineRes.meta.poster ? cineRes.meta.poster : null),
+              released: v.released || v.firstAired || null,
+              id: v.id || `${imdb}:${sNum}:${epNum}`
+            });
+          });
+        }
+      }
+
+      // 2. Fallback to TMDB if seasonsMap is empty and we have tmdb or title
+      if (Object.keys(seasonsMap).length === 0) {
+        let tmdbShowId = tmdb;
+        if (!tmdbShowId && (seriesTitle || q)) {
+          for (const key of TMDB_API_KEYS) {
+            try {
+              const sUrl = `https://api.themoviedb.org/3/search/tv?query=${encodeURIComponent(seriesTitle || q)}&api_key=${key}`;
+              const sRes = await fetchJson(sUrl, 3000);
+              if (sRes && sRes.results && sRes.results.length) {
+                tmdbShowId = sRes.results[0].id;
+                seriesTitle = sRes.results[0].name || seriesTitle;
+                poster = sRes.results[0].poster_path ? `https://image.tmdb.org/t/p/w500${sRes.results[0].poster_path}` : poster;
+                backdrop = sRes.results[0].backdrop_path ? `https://image.tmdb.org/t/p/w1280${sRes.results[0].backdrop_path}` : backdrop;
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+
+        if (tmdbShowId) {
+          for (const key of TMDB_API_KEYS) {
+            try {
+              const dUrl = `https://api.themoviedb.org/3/tv/${tmdbShowId}?api_key=${key}`;
+              const dRes = await fetchJson(dUrl, 3000);
+              if (dRes) {
+                seriesTitle = dRes.name || seriesTitle;
+                poster = dRes.poster_path ? `https://image.tmdb.org/t/p/w500${dRes.poster_path}` : poster;
+                backdrop = dRes.backdrop_path ? `https://image.tmdb.org/t/p/w1280${dRes.backdrop_path}` : backdrop;
+
+                const seasonsList = (dRes.seasons || []).filter(s => s.season_number > 0);
+                const seasonFetches = seasonsList.slice(0, 10).map(async (s) => {
+                  const sUrl = `https://api.themoviedb.org/3/tv/${tmdbShowId}/season/${s.season_number}?api_key=${key}`;
+                  const seasonData = await fetchJson(sUrl, 3000);
+                  if (seasonData && Array.isArray(seasonData.episodes)) {
+                    seasonsMap[s.season_number] = seasonData.episodes.map(ep => ({
+                      season: ep.season_number,
+                      episode: ep.episode_number,
+                      title: ep.name || `Episode ${ep.episode_number}`,
+                      overview: ep.overview || "",
+                      thumbnail: ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : poster,
+                      released: ep.air_date || null,
+                      runtime: ep.runtime || null,
+                      id: `${imdb || 'tmdb:' + tmdbShowId}:${ep.season_number}:${ep.episode_number}`
+                    }));
+                  }
+                });
+                await Promise.allSettled(seasonFetches);
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
+      // Sort episodes numerically within each season
+      for (const s of Object.keys(seasonsMap)) {
+        seasonsMap[s].sort((a, b) => a.episode - b.episode);
+      }
+
+      const totalSeasons = Object.keys(seasonsMap).length;
+      const responseData = {
+        success: totalSeasons > 0,
+        imdb: imdb || null,
+        tmdb: tmdb || null,
+        title: seriesTitle,
+        poster: poster,
+        backdrop: backdrop,
+        totalSeasons: totalSeasons,
+        seasons: seasonsMap
+      };
+
+      if (cacheKey && totalSeasons > 0) {
+        episodesCache.set(cacheKey, { ts: Date.now(), data: responseData });
+      }
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(responseData));
+    } catch (err) {
+      console.error("Series episodes error:", err);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ success: false, error: err.message, seasons: {} }));
     }
     return;
   }
