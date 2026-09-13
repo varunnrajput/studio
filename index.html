@@ -2176,8 +2176,19 @@
     function sortAndRenderTorrents() {
       const isMp4Filter = formatSelect && formatSelect.value === "mp4";
       let candidateList = searchTorrentList;
+      let fallbackToMkvActive = false;
+
       if (isMp4Filter) {
-        candidateList = candidateList.filter(t => t.is_mp4 !== false && isClientMp4(t.name));
+        const mp4Only = candidateList.filter(t => t.is_mp4 !== false && isClientMp4(t.name));
+        if (mp4Only.length > 0) {
+          candidateList = mp4Only;
+        } else if (searchTorrentList.length > 0) {
+          // Zero MP4s: gracefully fallback to showing all top-seeded swarms so user never sees empty screen
+          candidateList = searchTorrentList;
+          fallbackToMkvActive = true;
+        } else {
+          candidateList = [];
+        }
       }
 
       if (!candidateList.length) {
@@ -2207,12 +2218,10 @@
         searchResults.innerHTML = `
           <div class="col-span-2 flex flex-col items-center justify-center py-12 gap-3 text-center">
             <span class="font-hud text-2xl text-[var(--depth-near)]">
-              ${isMp4Filter ? "NO BROWSER MP4 RELEASES LOCATED" : "NO MATCHING SWARM PACKETS LOCATED"}
+              NO MATCHING SWARM PACKETS LOCATED
             </span>
             <p class="text-xs text-[var(--ink-dim)] max-w-md font-mono">
-              ${hasMkvAlternative && isMp4Filter 
-                ? `Located ${searchTorrentList.length} swarms, but they are packaged in MKV/10-bit format (which buffers in browser).` 
-                : `Zero swarm packets were indexed for <span class="text-[var(--ink-primary)]">"${rawQ}"</span>.`}
+              Zero swarm packets were indexed for <span class="text-[var(--ink-primary)]">"${rawQ}"</span> across DHT networks.
             </p>
             ${hasMkvAlternative && isMp4Filter ? `
               <button onclick="formatSelect.value='all'; sortAndRenderTorrents();" class="depth-btn-primary px-4 py-2 rounded text-xs font-bold mt-1 font-hud">
@@ -2264,6 +2273,29 @@
       const displayedTorrents = candidateList.slice(0, limitNum);
 
       searchResults.innerHTML = "";
+
+      if (fallbackToMkvActive) {
+        const noticeEl = document.createElement("div");
+        noticeEl.className = "col-span-2 p-3 rounded-lg bg-[var(--depth-card)] border border-[var(--depth-near)] text-xs font-mono flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2";
+        noticeEl.innerHTML = `
+          <div class="flex items-center gap-2 text-[var(--depth-near)]">
+            <span class="text-sm">⚠️</span>
+            <span><strong>ZERO NATIVE MP4s FOUND:</strong> Displaying ${candidateList.length} top-seeded MKV swarms. (Recommended: stream via TorBox or use VLC / Stremio for 0% buffer).</span>
+          </div>
+          <span class="text-[10px] text-[var(--ink-dim)] shrink-0 font-bold">[AUTO-FALLBACK]</span>
+        `;
+        searchResults.appendChild(noticeEl);
+      } else if (isMp4Filter && searchTorrentList.length > candidateList.length) {
+        const filterBar = document.createElement("div");
+        filterBar.className = "col-span-2 flex items-center justify-between text-[11px] font-mono text-[var(--ink-dim)] px-1";
+        filterBar.innerHTML = `
+          <span class="text-[var(--depth-mid)] font-bold">RADAR MATCHED ${searchTorrentList.length} TOTAL SWARMS (${candidateList.length} NATIVE BROWSER MP4)</span>
+          <button onclick="formatSelect.value='all'; sortAndRenderTorrents();" class="text-[var(--depth-mid)] hover:underline font-bold">
+            [ ⟳ SHOW ALL ${searchTorrentList.length} RELEASES (INC. MKV / VLC) ]
+          </button>
+        `;
+        searchResults.appendChild(filterBar);
+      }
       displayedTorrents.forEach((t, idx) => {
         const isTopSeed = idx === 0 && (sort === "latest_topseed" || sort === "seeds");
         const releaseDate = t.added ? new Date(t.added * 1000).toISOString().split('T')[0] : "";

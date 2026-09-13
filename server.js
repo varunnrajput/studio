@@ -464,8 +464,14 @@ function isBrowserMp4(name, isYts = false) {
   return false;
 }
 
-// Helper: Normalize queries to prevent apibay fulltext parser errors on punctuation/operators
-function buildSearchQueries(raw, format = "mp4") {
+// Studio / network / franchise prefixes commonly included in user search queries
+const FRANCHISE_PREFIXES = /^(?:marvel(?:'s)?|disney(?:\s*\+|\s*plus)?(?:'s)?|dc(?:'s)?|hbo(?:\s*max)?|netflix|apple(?:\s*tv(?:\s*\+)?)?|amazon(?:\s*prime)?|paramount(?:\s*\+)?|hulu|peacock|star\s*wars)\s+/i;
+
+// In-memory metadata resolution cache (1 hour TTL)
+const metaCache = new Map();
+
+// Helper: Normalize queries and generate smart search variations with prefix stripping
+function buildSearchQueries(raw, matchedMetaTitle = null, format = "mp4") {
   const queries = [];
   const add = (str) => {
     if (!str) return;
@@ -477,32 +483,37 @@ function buildSearchQueries(raw, format = "mp4") {
 
   const isMp4 = format === "mp4" || format === "mp4_only";
 
-  // Clean raw title first
+  // 1. If we matched official title (e.g. "Moon Knight" for "marvel moon knight")
+  if (matchedMetaTitle) {
+    add(matchedMetaTitle);
+    if (isMp4) add(`${matchedMetaTitle} mp4`);
+    add(`${matchedMetaTitle} s01`);
+  }
+
+  // 2. Strip studio / franchise prefixes from raw query (e.g. "marvel moon knight" -> "moon knight")
+  const stripped = raw.replace(FRANCHISE_PREFIXES, "").trim();
+  if (stripped && stripped.toLowerCase() !== raw.toLowerCase()) {
+    add(stripped);
+    if (isMp4) add(`${stripped} mp4`);
+  }
+
+  // 3. Raw query itself
   add(raw);
+  if (isMp4) add(`${raw} mp4`);
 
-  if (isMp4) {
-    add(`${raw} mp4`);
-  }
-
-  const dashParts = raw.split(/\s*[-–—]\s*/);
-  if (dashParts.length > 1 && dashParts[0]) {
-    add(dashParts[0]);
-    if (isMp4) add(`${dashParts[0].trim()} mp4`);
-  }
-
-  const colonParts = raw.split(/\s*:\s*/);
-  if (colonParts.length > 1 && colonParts[0]) {
-    add(colonParts[0]);
-    if (isMp4) add(`${colonParts[0].trim()} mp4`);
+  // 4. Dash / colon split parts
+  const dashParts = raw.split(/\s*[-–—:]\s*/);
+  if (dashParts.length > 1 && dashParts[0].trim()) {
+    const p = dashParts[0].trim();
+    add(p);
+    const pStripped = p.replace(FRANCHISE_PREFIXES, "").trim();
+    if (pStripped) add(pStripped);
   }
 
-  const words = raw.replace(/[:\-–—_/\\!?.'"()[\]~*+@#$&]/g, " ").trim().split(/\s+/).filter(Boolean);
-  if (words.length > 3) {
-    add(words.slice(0, 3).join(" "));
-  }
-  if (words.length > 2) {
-    add(words.slice(0, 2).join(" "));
-  }
+  // 5. Word segments
+  const words = (stripped || raw).replace(/[:\-–—_/\\!?.'"()[\]~*+@#$&]/g, " ").trim().split(/\s+/).filter(Boolean);
+  if (words.length > 3) add(words.slice(0, 3).join(" "));
+  if (words.length > 2) add(words.slice(0, 2).join(" "));
 
   return queries;
 }
@@ -512,7 +523,6 @@ function extractCleanTitleAndYear(raw) {
   if (!raw || typeof raw !== "string") return { title: "", year: "" };
   let s = raw.replace(/\.(mp4|mkv|avi|mov|webm|m4v)$/i, "");
   s = s.replace(/[._]/g, " ");
-  // Strip S01E01 / 1x01 / Season 1 markers if present for series
   s = s.replace(/\b[sS]\d{1,2}[eE]\d{1,2}\b.*/i, "");
   s = s.replace(/\b\d{1,2}x\d{1,2}\b.*/i, "");
   s = s.replace(/\bseason\s*\d+\b.*/i, "");
@@ -526,52 +536,92 @@ function extractCleanTitleAndYear(raw) {
   return { title, year };
 }
 
-// Helper: Resolve Cinemeta metadata with query fallbacks (fast timeout to never block torrent search)
-async function resolveMediaMeta(queryCandidates, preferSeries = false) {
-  try {
-    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 3800));
-    const searchPromise = (async () => {
-      for (const q of queryCandidates.slice(0, 3)) {
-        const [movieMeta, seriesMeta] = await Promise.all([
-          fetchJson(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(q)}.json`, 3500),
-          fetchJson(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(q)}.json`, 3500)
-        ]);
+// Helper: Resolve precise media metadata using TMDB with Cinemeta fallback
+async function resolveMediaMeta(rawQuery) {
+  if (!rawQuery || typeof rawQuery !== "string") return null;
+  const cacheKey = rawQuery.toLowerCase().trim();
+  const cached = metaCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < 3600000) {
+    return cached.data;
+  }
 
-        const candidates = [];
-        if (preferSeries) {
-          if (seriesMeta && seriesMeta.metas) candidates.push(...seriesMeta.metas);
-          if (movieMeta && movieMeta.metas) candidates.push(...movieMeta.metas);
-        } else {
-          if (movieMeta && movieMeta.metas) candidates.push(...movieMeta.metas);
-          if (seriesMeta && seriesMeta.metas) candidates.push(...seriesMeta.metas);
-        }
+  const stripped = rawQuery.replace(FRANCHISE_PREFIXES, "").trim();
+  const searchTerms = [stripped, rawQuery].filter(Boolean);
 
-        if (candidates.length > 0) {
-          const official = candidates.find(m =>
-            m.name &&
-            !m.name.toLowerCase().includes("reaction") &&
-            !m.name.toLowerCase().includes("review") &&
-            !m.name.includes("#DUPE#")
-          );
-          return official || candidates[0];
+  let result = null;
+
+  // 1. Try TMDB Search First (exceptional accuracy with franchise titles like "marvel moon knight")
+  for (const term of searchTerms) {
+    try {
+      const res = await fetch(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(term)}&api_key=${TMDB_API_KEY}`, { signal: AbortSignal.timeout(2500) });
+      if (res.ok) {
+        const json = await res.json();
+        const candidates = (json.results || []).filter(r => r.media_type === "movie" || r.media_type === "tv");
+        if (candidates.length) {
+          const lowerTerm = term.toLowerCase();
+          const best = candidates.find(r => (r.title || r.name || "").toLowerCase().includes(lowerTerm)) || candidates[0];
+          const type = best.media_type === "tv" ? "series" : "movie";
+
+          let imdbId = null;
+          try {
+            const extRes = await fetch(`https://api.themoviedb.org/3/${best.media_type}/${best.id}/external_ids?api_key=${TMDB_API_KEY}`, { signal: AbortSignal.timeout(2000) });
+            if (extRes.ok) {
+              const extJson = await extRes.json();
+              imdbId = extJson.imdb_id;
+            }
+          } catch (e) {}
+
+          result = {
+            id: imdbId || `tmdb:${best.id}`,
+            name: best.title || best.name,
+            year: (best.release_date || best.first_air_date || "").slice(0, 4),
+            rating: best.vote_average ? best.vote_average.toFixed(1) : null,
+            poster: best.poster_path ? `https://image.tmdb.org/t/p/w500${best.poster_path}` : null,
+            type: type
+          };
+          break;
         }
       }
-      return null;
-    })();
-
-    return await Promise.race([searchPromise, timeoutPromise]);
-  } catch (e) {
-    return null;
+    } catch (e) {}
   }
+
+  // 2. Cinemeta fallback
+  if (!result) {
+    for (const term of searchTerms) {
+      try {
+        const [sRes, mRes] = await Promise.all([
+          fetch(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(term)}.json`, { signal: AbortSignal.timeout(2500) }).then(r=>r.json()).catch(()=>null),
+          fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(term)}.json`, { signal: AbortSignal.timeout(2500) }).then(r=>r.json()).catch(()=>null)
+        ]);
+        const metas = [...(sRes?.metas || []), ...(mRes?.metas || [])];
+        if (metas.length) {
+          result = {
+            id: metas[0].id,
+            name: metas[0].name,
+            year: metas[0].releaseInfo || metas[0].year,
+            rating: metas[0].imdbRating,
+            poster: metas[0].poster,
+            type: metas[0].type
+          };
+          break;
+        }
+      } catch (e) {}
+    }
+  }
+
+  if (result) {
+    metaCache.set(cacheKey, { ts: Date.now(), data: result });
+  }
+
+  return result;
 }
 
-// Helper: Multi-engine Federated Swarm Scraper (SolidTorrents + Nyaa + EZTV + YTS + Apibay)
+// Helper: Multi-engine Federated Swarm Scraper (Torrentio + EZTV + Apibay + SolidTorrents + YTS + Nyaa)
 async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4") {
-  const isMp4Only = format === "mp4" || format === "mp4_only";
-  const queryCandidates = buildSearchQueries(query, format);
+  const queryCandidates = buildSearchQueries(query, matchedMeta?.name, format);
   const primaryQuery = queryCandidates[0] || query;
-  const imdbIdRaw = matchedMeta?.id || matchedMeta?.imdb_id;
-  const cleanImdbDigits = imdbIdRaw ? imdbIdRaw.replace(/^tt/, "") : null;
+  const imdbId = matchedMeta?.id && matchedMeta.id.startsWith("tt") ? matchedMeta.id : null;
+  const cleanImdbDigits = imdbId ? imdbId.replace(/^tt/, "") : null;
 
   const trackers = [
     "udp://tracker.opentrackr.org:1337/announce",
@@ -589,14 +639,10 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
     if (hash === "0000000000000000000000000000000000000000" || seenHashes.has(hash)) return;
 
     const isMp4 = isBrowserMp4(item.name, isYts);
-    if (isMp4Only && !isMp4) return;
-
     seenHashes.add(hash);
 
-    const hasImdb = item.imdb && typeof item.imdb === "string" && item.imdb.startsWith("tt");
-    const poster = hasImdb 
-      ? `https://images.metahub.space/poster/small/${item.imdb}/img` 
-      : (matchedMeta?.poster || null);
+    const hasImdb = (item.imdb && typeof item.imdb === "string" && item.imdb.startsWith("tt")) ? item.imdb : imdbId;
+    const poster = matchedMeta?.poster || (hasImdb ? `https://images.metahub.space/poster/small/${hasImdb}/img` : null);
 
     allTorrents.push({
       name: item.name,
@@ -606,29 +652,136 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
       leechers: parseInt(item.leechers, 10) || 0,
       added: parseInt(item.added, 10) || 0,
       magnet: item.magnet || `magnet:?xt=urn:btih:${item.info_hash}&dn=${encodeURIComponent(item.name)}${trackers}`,
-      imdb: hasImdb ? item.imdb : (matchedMeta?.id || null),
+      imdb: hasImdb,
       poster: poster,
       is_mp4: isMp4,
       container: isMp4 ? "mp4" : "mkv",
+      source: item.source || "Swarm",
       meta: matchedMeta ? {
         title: matchedMeta.name,
-        year: matchedMeta.releaseInfo || matchedMeta.year,
-        rating: matchedMeta.imdbRating,
+        year: matchedMeta.year,
+        rating: matchedMeta.rating,
         poster: matchedMeta.poster,
         type: matchedMeta.type
       } : null
     });
   }
 
-  // Execute all scrapers in parallel
+  // Execute all federated scrapers in parallel
   const scrapers = [];
 
-  // 1. SolidTorrents (Ultra-fast modern DHT indexer with category=video & sort=seeders)
+  // 1. Torrentio Stremio Streams Provider (1337x, TorrentGalaxy, ThePirateBay, Kickass)
+  if (imdbId) {
+    scrapers.push((async () => {
+      try {
+        const streamUrls = matchedMeta?.type === "series"
+          ? [
+              `https://torrentio.strem.fun/stream/series/${imdbId}:1:1.json`,
+              `https://torrentio.strem.fun/stream/series/${imdbId}:1:2.json`
+            ]
+          : [`https://torrentio.strem.fun/stream/movie/${imdbId}.json`];
+
+        for (const sUrl of streamUrls) {
+          const res = await fetch(sUrl, { signal: AbortSignal.timeout(3500) });
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data.streams)) {
+              data.streams.forEach(s => {
+                if (!s.infoHash) return;
+                const lines = (s.title || "").split("\n");
+                const name = lines[0] || s.behaviorHints?.filename || `${matchedMeta.name} Stream`;
+                const seedMatch = s.title?.match(/👤\s*(\d+)/);
+                const seeds = seedMatch ? parseInt(seedMatch[1], 10) : 10;
+                const sizeMatch = s.title?.match(/💾\s*([\d.]+)\s*([A-Za-z]+)/);
+                let sizeBytes = 0;
+                if (sizeMatch) {
+                  const num = parseFloat(sizeMatch[1]);
+                  const unit = sizeMatch[2].toUpperCase();
+                  if (unit.includes("GB") || unit === "G") sizeBytes = Math.round(num * 1024 * 1024 * 1024);
+                  else if (unit.includes("MB") || unit === "M") sizeBytes = Math.round(num * 1024 * 1024);
+                }
+                addTorrent({
+                  name: name,
+                  info_hash: s.infoHash,
+                  seeders: seeds,
+                  leechers: 0,
+                  size: sizeBytes,
+                  source: "Torrentio",
+                  imdb: imdbId
+                });
+              });
+            }
+          }
+        }
+      } catch (e) {}
+    })());
+  }
+
+  // 2. EZTV (TV Shows Indexer)
+  if (cleanImdbDigits) {
+    scrapers.push((async () => {
+      try {
+        const url = `https://eztvx.to/api/get-torrents?limit=50&imdb_id=${cleanImdbDigits}`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.torrents && Array.isArray(json.torrents)) {
+            json.torrents.forEach(t => {
+              addTorrent({
+                name: t.title || t.filename,
+                info_hash: t.hash,
+                seeders: t.seeds || 0,
+                leechers: t.peers || 0,
+                added: t.date_released_unix || 0,
+                size: parseInt(t.size_bytes, 10) || 0,
+                magnet: t.magnet_url,
+                source: "EZTV",
+                imdb: imdbId
+              });
+            });
+          }
+        }
+      } catch (e) {}
+    })());
+  }
+
+  // 3. Apibay (ThePirateBay API with category=200 Video filter)
   scrapers.push((async () => {
     try {
       for (const q of queryCandidates.slice(0, 3)) {
+        const url = `https://apibay.org/q.php?q=${encodeURIComponent(q)}&cat=200`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+        if (res.ok) {
+          const items = await res.json();
+          if (Array.isArray(items)) {
+            let count = 0;
+            items.forEach(t => {
+              if (t.name && t.name !== "No results returned") {
+                addTorrent({
+                  name: t.name,
+                  info_hash: t.info_hash,
+                  seeders: parseInt(t.seeders, 10) || 0,
+                  leechers: parseInt(t.leechers, 10) || 0,
+                  added: parseInt(t.added, 10) || 0,
+                  size: parseInt(t.size, 10) || 0,
+                  source: "Apibay"
+                });
+                count++;
+              }
+            });
+            if (count > 0) break;
+          }
+        }
+      }
+    } catch (e) {}
+  })());
+
+  // 4. SolidTorrents (Fast DHT indexer with category=video)
+  scrapers.push((async () => {
+    try {
+      for (const q of queryCandidates.slice(0, 2)) {
         const url = `https://solidtorrents.to/api/v1/search?q=${encodeURIComponent(q)}&category=video&sort=seeders`;
-        const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
+        const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
         if (res.ok) {
           const json = await res.json();
           if (json.results && Array.isArray(json.results)) {
@@ -641,7 +794,8 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
                   seeders: t.seeders || 0,
                   leechers: t.leechers || 0,
                   size: t.size || 0,
-                  added: t.createdAt ? Math.floor(Date.parse(t.createdAt) / 1000) || 0 : 0
+                  added: t.createdAt ? Math.floor(Date.parse(t.createdAt) / 1000) || 0 : 0,
+                  source: "SolidTorrents"
                 });
                 count++;
               }
@@ -653,12 +807,54 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
     } catch (e) {}
   })());
 
-  // 2. Nyaa.si (Fast Anime RSS Indexer with &s=seeders&o=desc)
+  // 5. YTS Movies Scraper (100% Browser-Native MP4s)
   scrapers.push((async () => {
     try {
-      for (const q of queryCandidates.slice(0, 3)) {
+      const mirrors = ["https://yts.bz", "https://yts.rs", "https://yts.mx"];
+      for (const rawQ of queryCandidates.slice(0, 2)) {
+        const q = rawQ.replace(/\bmp4\b/gi, "").trim();
+        if (!q) continue;
+        let gotYts = false;
+        for (const m of mirrors) {
+          try {
+            const url = `${m}/api/v2/list_movies.json?query_term=${encodeURIComponent(q)}&limit=20`;
+            const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
+            if (res.ok) {
+              const json = await res.json();
+              if (json.data && Array.isArray(json.data.movies)) {
+                json.data.movies.forEach(movie => {
+                  if (movie.torrents && Array.isArray(movie.torrents)) {
+                    movie.torrents.forEach(t => {
+                      addTorrent({
+                        name: `${movie.title} (${movie.year}) [${t.quality}] [${t.type}] YTS`,
+                        info_hash: t.hash,
+                        seeders: t.seeds || 0,
+                        leechers: t.peers || 0,
+                        added: t.date_uploaded_unix || 0,
+                        size: t.size_bytes || 0,
+                        imdb: movie.imdb_code,
+                        source: "YTS"
+                      }, true);
+                    });
+                  }
+                });
+                gotYts = true;
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+        if (gotYts) break;
+      }
+    } catch (e) {}
+  })());
+
+  // 6. Nyaa.si (Anime RSS Indexer)
+  scrapers.push((async () => {
+    try {
+      for (const q of queryCandidates.slice(0, 2)) {
         const url = `https://nyaa.si/?page=rss&q=${encodeURIComponent(q)}&s=seeders&o=desc`;
-        const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
+        const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
         if (res.ok) {
           const xml = await res.text();
           const itemMatches = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
@@ -688,98 +884,12 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
                 seeders: seedersMatch ? parseInt(seedersMatch[1], 10) : 0,
                 leechers: leechersMatch ? parseInt(leechersMatch[1], 10) : 0,
                 added: dateMatch ? Math.floor(Date.parse(dateMatch[1]) / 1000) || 0 : 0,
-                size: sizeBytes
+                size: sizeBytes,
+                source: "Nyaa"
               });
               count++;
             }
           }
-          if (count > 0) break;
-        }
-      }
-    } catch (e) {}
-  })());
-
-  // 3. EZTV (Fast TV Shows Indexer)
-  if (cleanImdbDigits) {
-    scrapers.push((async () => {
-      try {
-        const url = `https://eztvx.to/api/get-torrents?limit=50&imdb_id=${cleanImdbDigits}`;
-        const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
-        if (res.ok) {
-          const json = await res.json();
-          if (json.torrents && Array.isArray(json.torrents)) {
-            json.torrents.forEach(t => {
-              addTorrent({
-                name: t.title || t.filename,
-                info_hash: t.hash,
-                seeders: t.seeds || 0,
-                leechers: t.peers || 0,
-                added: t.date_released_unix || 0,
-                size: parseInt(t.size_bytes, 10) || 0,
-                magnet: t.magnet_url
-              });
-            });
-          }
-        }
-      } catch (e) {}
-    })());
-  }
-
-  // 4. YTS Movies Scraper (Always 100% Browser-Native MP4s)
-  scrapers.push((async () => {
-    try {
-      const mirrors = ["https://yts.bz", "https://yts.rs", "https://yts.mx"];
-      for (const rawQ of queryCandidates.slice(0, 3)) {
-        const q = rawQ.replace(/\bmp4\b/gi, "").trim();
-        if (!q) continue;
-        let gotYts = false;
-        for (const m of mirrors) {
-          try {
-            const url = `${m}/api/v2/list_movies.json?query_term=${encodeURIComponent(q)}&limit=20`;
-            const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-            if (res.ok) {
-              const json = await res.json();
-              if (json.data && Array.isArray(json.data.movies)) {
-                json.data.movies.forEach(movie => {
-                  if (movie.torrents && Array.isArray(movie.torrents)) {
-                    movie.torrents.forEach(t => {
-                      addTorrent({
-                        name: `${movie.title} (${movie.year}) [${t.quality}] [${t.type}] YTS`,
-                        info_hash: t.hash,
-                        seeders: t.seeds || 0,
-                        leechers: t.peers || 0,
-                        added: t.date_uploaded_unix || 0,
-                        size: t.size_bytes || 0,
-                        imdb: movie.imdb_code
-                      }, true);
-                    });
-                  }
-                });
-                gotYts = true;
-                break;
-              }
-            }
-          } catch (e) {}
-        }
-        if (gotYts) break;
-      }
-    } catch (e) {}
-  })());
-
-  // 5. Apibay (ThePirateBay API with category=200 Video filter)
-  scrapers.push((async () => {
-    try {
-      for (const q of queryCandidates.slice(0, 3)) {
-        const url = `https://apibay.org/q.php?q=${encodeURIComponent(q)}&cat=200`;
-        const items = await fetchJson(url, 3500);
-        if (Array.isArray(items)) {
-          let count = 0;
-          items.forEach(t => {
-            if (t.name !== "No results returned") {
-              addTorrent(t);
-              count++;
-            }
-          });
           if (count > 0) break;
         }
       }
@@ -788,8 +898,14 @@ async function scrapeTorrentSwarm(query, matchedMeta, limit = 50, format = "mp4"
 
   await Promise.allSettled(scrapers);
 
-  // Sort strictly by seeders descending so the most alive / fastest swarms are ALWAYS first
-  allTorrents.sort((a, b) => (b.seeders || 0) - (a.seeders || 0));
+  // Sorting: If MP4 mode requested, place playable MP4s first, followed by top MKVs
+  allTorrents.sort((a, b) => {
+    if (format === "mp4") {
+      if (a.is_mp4 && !b.is_mp4) return -1;
+      if (!a.is_mp4 && b.is_mp4) return 1;
+    }
+    return (b.seeders || 0) - (a.seeders || 0);
+  });
 
   return allTorrents.slice(0, limit);
 }
@@ -930,8 +1046,7 @@ async function handler(req, res) {
                    "mp4";
 
     try {
-      const queryCandidates = buildSearchQueries(query, format);
-      const matchedMeta = await resolveMediaMeta(queryCandidates);
+      const matchedMeta = await resolveMediaMeta(query);
       const results = await scrapeTorrentSwarm(query, matchedMeta, limit, format);
 
       res.writeHead(200, { "Content-Type": "application/json" });
